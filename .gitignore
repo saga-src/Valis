@@ -1,0 +1,62 @@
+# --- Dependencies ---
+node_modules/
+.pnpm-store/
+
+# --- Production Build Artifacts ---
+dist/
+dist-electron/
+release/
+dist
+dist-ssr
+.local
+
+# --- Local Environment & Secrets (CRITICAL) ---
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.example
+
+# --- Database & Local Storage ---
+# We do NOT want to commit your personal game library or play history
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+valis.db
+
+# --- OS Generated Files ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Logs ---
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.log
+logs
+
+# --- Editor / IDE ---
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+*.suo
+*.ntvs
+*.njsproj
+*.sln
+*.sw?
+
+# --- Supabase / Cloud Functions ---
+supabase/.temp/
+supabase/functions/*/deno.lock
+
+# --- Electron Builder ---
+# Note: We KEEP the 'build/' folder if it contains your icon.ico/logo.png
+# We IGNORE the output directories defined in package.json
