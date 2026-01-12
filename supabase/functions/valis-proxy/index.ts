@@ -19,7 +19,6 @@ async function getTwitchToken() {
     return cachedTwitchToken;
   }
 
-  // Fix: Access Deno which is now declared above
   const clientId = Deno.env.get("IGDB_CLIENT_ID");
   const clientSecret = Deno.env.get("IGDB_CLIENT_SECRET");
 
@@ -38,36 +37,29 @@ async function getTwitchToken() {
 
   const data = await response.json();
   cachedTwitchToken = data.access_token;
-  // Expire 1 minute early to be safe
   tokenExpiry = now + (data.expires_in * 1000) - 60000;
   
   return cachedTwitchToken;
 }
 
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   const url = new URL(req.url);
   const path = url.pathname;
+  
+  console.log(`[Proxy] Request: ${req.method} ${path}`);
 
   try {
     // 1. IGDB PROXY
     if (path.endsWith('/igdb') && req.method === 'POST') {
       const endpoint = req.headers.get('igdb-endpoint') || 'games';
       const query = await req.text();
+      console.log(`[Proxy] IGDB Endpoint: ${endpoint}, Query: ${query.substring(0, 100)}...`);
       
-      if (!query) {
-        return new Response(JSON.stringify({ error: "Missing Apicalypse query body" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
-        });
-      }
-
       const token = await getTwitchToken();
-      // Fix: Access Deno which is now declared above
       const clientId = Deno.env.get("IGDB_CLIENT_ID");
 
       const igdbResponse = await fetch(`https://api.igdb.com/v4/${endpoint}`, {
@@ -80,102 +72,68 @@ serve(async (req) => {
         body: query
       });
 
-      if (!igdbResponse.ok) {
-        const errText = await igdbResponse.text();
-        return new Response(JSON.stringify({ error: "IGDB Upstream Error", details: errText }), {
-          status: igdbResponse.status,
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
-        });
-      }
-
       const data = await igdbResponse.json();
       return new Response(JSON.stringify(data), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
-    // 2. STEAM ACHIEVEMENTS PROXY (User Progress)
+    // 2. STEAM ACHIEVEMENTS PROXY (Player Unlock Status)
+    // This calls GetPlayerAchievements which includes "achieved" and "unlocktime"
     if (path.endsWith('/steam/achievements') && req.method === 'GET') {
       const steamId = url.searchParams.get('steamId');
       const appId = url.searchParams.get('appId');
-      // Fix: Access Deno which is now declared above
       const apiKey = Deno.env.get("STEAM_WEB_API_KEY");
 
-      if (!steamId || !appId) {
-        return new Response(JSON.stringify({ error: "Missing steamId or appId parameters" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
-        });
-      }
+      console.log(`[Proxy] Steam Progress Fetch: User ${steamId}, App ${appId}`);
 
-      if (!apiKey) {
-        return new Response(JSON.stringify({ error: "Steam API key not configured on server" }), {
-          status: 500,
+      if (!steamId || !appId || !apiKey) {
+        return new Response(JSON.stringify({ error: "Missing required parameters or server key" }), {
+          status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
       }
 
       const steamUrl = `http://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v0001/?key=${apiKey}&steamid=${steamId}&appid=${appId}`;
-      const steamResponse = await fetch(steamUrl);
-
-      if (!steamResponse.ok) {
-        return new Response(JSON.stringify({ error: "Steam Upstream Error" }), {
-          status: steamResponse.status,
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
-        });
-      }
-
-      const data = await steamResponse.json();
+      const response = await fetch(steamUrl);
+      const data = await response.json();
+      
       return new Response(JSON.stringify(data), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
-    // 3. STEAM SCHEMA PROXY (Definitions)
+    // 3. STEAM SCHEMA PROXY (Global Definitions)
+    // This calls GetSchemaForGame which returns names, descriptions, and icons
     if (path.endsWith('/steam/schema') && req.method === 'GET') {
       const appId = url.searchParams.get('appId');
       const apiKey = Deno.env.get("STEAM_WEB_API_KEY");
 
-      if (!appId) {
-        return new Response(JSON.stringify({ error: "Missing appId parameter" }), {
+      console.log(`[Proxy] Steam Schema Fetch: App ${appId}`);
+
+      if (!appId || !apiKey) {
+        return new Response(JSON.stringify({ error: "Missing appId or server key" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
       }
 
-      if (!apiKey) {
-        return new Response(JSON.stringify({ error: "Steam API key not configured on server" }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
-        });
-      }
-
       const steamUrl = `http://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v2/?key=${apiKey}&appid=${appId}`;
-      const steamResponse = await fetch(steamUrl);
-
-      if (!steamResponse.ok) {
-        // Return 200 with empty data if game has no stats, to prevent client errors
-        if (steamResponse.status === 400 || steamResponse.status === 404) {
-             return new Response(JSON.stringify({ game: {} }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
-        return new Response(JSON.stringify({ error: "Steam Upstream Error" }), {
-          status: steamResponse.status,
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
-        });
-      }
-
-      const data = await steamResponse.json();
+      const response = await fetch(steamUrl);
+      const data = await response.json();
+      
       return new Response(JSON.stringify(data), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
-    return new Response(JSON.stringify({ error: "Not Found" }), {
+    return new Response(JSON.stringify({ error: "Endpoint not handled" }), {
       status: 404,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
 
   } catch (error) {
+    console.error(`[Proxy] Critical Error:`, error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }

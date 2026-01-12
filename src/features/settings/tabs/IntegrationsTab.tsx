@@ -380,7 +380,7 @@ export const IntegrationsTab = () => {
                     </div>
                 </div>
 
-                <div className="space-y-3 pt-4 border-t border-border/50">
+                <div id="steam-api-key-section" className="space-y-3 pt-4 border-t border-border/50">
                     <label className="text-xs font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-1.5">
                       <Key size={12} /> Steam Web API Key
                     </label>

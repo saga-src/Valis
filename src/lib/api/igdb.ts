@@ -1,4 +1,3 @@
-
 import axios from 'axios';
 import { IGDBGame } from '../../types/igdb';
 
@@ -10,26 +9,24 @@ export async function searchGames(query: string): Promise<IGDBGame[]> {
   if (window.api && window.api.searchGames) {
     try {
       const results = await window.api.searchGames(query);
-      // Map the simplified result back to IGDBGame structure expected by UI
       return results.map((r: any) => ({
         id: Number(r.id),
-        name: r.name, // Updated from r.title
+        name: r.name, 
         cover: r.cover_url ? { url: r.cover_url } : undefined,
         first_release_date: r.first_release_date,
         total_rating: r.rating
       }));
-    } catch (e) {
-      console.error("IPC Search failed:", e);
+    } catch (e: any) {
+      console.error('🔥 API CRASH (IPC Search):', e);
+      // Try to notify via DOM event if toast context isn't directly reachable in this utility
+      window.dispatchEvent(new CustomEvent('toast-error', { detail: `IPC Search Error: ${e.message}` }));
       return [];
     }
   }
 
   // Fallback to direct Proxy (Dev mode / Web)
   try {
-    // Escaping quotes in query to prevent Apicalypse errors
     const safeQuery = query.replace(/"/g, '\\"');
-    
-    // Removed time_to_beat fields for faster/lighter search
     const igdbBody = `
       search "${safeQuery}";
       fields name, summary, storyline, cover.url, 
@@ -42,14 +39,13 @@ export async function searchGames(query: string): Promise<IGDBGame[]> {
     `;
 
     const response = await axios.post(`${PROXY_BASE}/search`, igdbBody, {
-      headers: {
-        'Content-Type': 'text/plain'
-      }
+      headers: { 'Content-Type': 'text/plain' }
     });
 
     return response.data;
-  } catch (error) {
-    console.error("Search failed:", error);
+  } catch (error: any) {
+    console.error('🔥 API CRASH (Web Proxy):', error);
+    window.dispatchEvent(new CustomEvent('toast-error', { detail: `Proxy API Error: ${error.message}` }));
     return [];
   }
 }
@@ -63,9 +59,7 @@ export async function fetchTimeToBeat(gameId: number): Promise<{ normally?: numb
     `;
 
     const response = await axios.post(`${PROXY_BASE}/ttb`, igdbBody, {
-      headers: {
-        'Content-Type': 'text/plain'
-      }
+      headers: { 'Content-Type': 'text/plain' }
     });
 
     if (response.data && response.data.length > 0) {
@@ -76,8 +70,8 @@ export async function fetchTimeToBeat(gameId: number): Promise<{ normally?: numb
       };
     }
     return null;
-  } catch (error) {
-    console.warn(`Failed to fetch TTB for game ${gameId}:`, error);
+  } catch (error: any) {
+    console.warn(`Failed to fetch TTB for game ${gameId}:`, error.message);
     return null;
   }
 }
@@ -86,15 +80,8 @@ export const getCoverUrl = (url: string | undefined, size: 'big' | 'huge' = 'big
   if (!url) {
     return 'https://placehold.co/400x600?text=No+Cover'; 
   }
-
-  // 1. Strip any leading slashes or protocols to get a clean path
   const cleanPath = url.replace(/^(\/\/|http:\/\/|https:\/\/)/, '');
-  
-  // 2. Prepend HTTPS explicitly
   const secureUrl = `https://${cleanPath}`;
-
-  // 3. Upgrade Resolution
   const targetSize = size === 'big' ? 't_cover_big' : 't_1080p';
-  
   return secureUrl.replace('t_thumb', targetSize);
 };

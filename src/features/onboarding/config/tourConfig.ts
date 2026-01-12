@@ -43,24 +43,35 @@ export const SETUP_TOUR: TourStep[] = [
     target: '#settings-tab-integrations',
     padding: 4,
     position: 'bottom',
+    route: '/settings',
     waitForRoute: '/settings/integrations',
     trigger: 'click'
   },
   {
     id: 'link-accounts',
     title: 'Connect Your World',
-    body: 'Link your accounts here. **Recommendation:** Sync only one account for this tutorial (Priority: Steam > PlayStation > Epic). You can add others later.',
+    body: 'Select a platform below to configure your connection. If you aren\'t ready to link yet, click "Link Later" to explore manual setup options.',
     target: '#integrations-content',
     position: 'left',
-    isInteractive: true,
-    actionLabel: 'Next',
+    route: '/settings/integrations',
+    trigger: 'next' 
+  },
+  {
+    id: 'steam-api-manual',
+    title: 'Steam Achievements',
+    body: 'To track Steam achievements, you need a Web API Key. This is optional, but required if you want to have achievements listed (except for PSN/Xbox exclusives).',
+    target: '#steam-api-key-section',
+    padding: 10,
+    position: 'top',
+    route: '/settings/integrations',
     trigger: 'next'
   },
   {
     id: 'trigger-sync',
-    title: 'Sync Your Library',
-    body: 'Now that your account is linked, click the Sync button to fetch your games and metadata.',
+    title: 'Global Sync',
+    body: 'Telemetry is ready. Click the Sync button on your connected accounts to fetch your library, playtime, and artifacts.',
     target: 'DYNAMIC', // Resolved in TourOverlay.tsx
+    route: '/settings/integrations',
     trigger: 'click',
     position: 'left'
   },
@@ -86,6 +97,7 @@ export const SETUP_TOUR: TourStep[] = [
     title: 'Your Archetype',
     body: 'This is your Gamer DNA. It evolves based on how you play—completing games, writing reviews, or logging hours.',
     target: '#archetypes-container',
+    route: '/milestones',
     trigger: 'next',
     position: 'top'
   },
@@ -94,6 +106,7 @@ export const SETUP_TOUR: TourStep[] = [
     title: 'Protocol Artifacts',
     body: 'These are secret achievements awarded for unique behaviors and playstyles. Discover them all to complete your collection.',
     target: '#artifacts-container',
+    route: '/milestones',
     trigger: 'next',
     position: 'top',
     actionLabel: 'Finish Setup'
@@ -207,6 +220,7 @@ export const WALKTHROUGH_TOUR: TourStep[] = [
     body: 'Create a Valis account to sync your profile and backup your progression.',
     target: '#nav-community',
     position: 'right',
+    route: '/community',
     actionLabel: 'Finish Tour',
     trigger: 'next'
   }

@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/images/logo.png" alt="Valis Logo" width="120" height="120" />
   <h1>VALIS</h1>
-  <p><strong>v1.0.0 | Digital Vault & Game Journal</strong></p>
+  <p><strong>v1.0.0 | Digital Game Journal</strong></p>
   
   <p>
     <a href="#features">Features</a> •
@@ -11,7 +11,7 @@
   </p>
 
   <p>
-    <img src="https://img.shields.io/github/license/saga-src/valis?style=flat-square" alt="License" />
+    <img src="https://img.shields.io/github/license/saga-src/Valis?style=flat-square" alt="License" />
      <img src="https://img.shields.io/badge/Privacy-Local--First-green?style=flat-square" alt="Local First" />
     <img src="https://img.shields.io/badge/Cloud-Opt--In-blue?style=flat-square" alt="Cloud Opt-In" />
     <img src="https://img.shields.io/badge/Built%20with-AI%20Assistance-purple?style=flat-square" alt="Built with AI Assistance" />

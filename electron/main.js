@@ -1,8 +1,10 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+
+import { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut } from 'electron';
+import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { fork } from 'child_process';
-import { autoUpdater } from 'electron-updater';
+import electronUpdater from 'electron-updater';
 import { initDB } from './db/init.js';
 import { registerGameHandlers } from './ipc/games.js';
 import { registerSessionHandlers } from './ipc/sessions.js';
@@ -15,8 +17,13 @@ import { achievementWatcher } from './services/FileWatcherService.js';
 import * as igdb from './lib/igdb.js';
 import fs from 'fs';
 
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.valis.app'); 
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const { autoUpdater } = electronUpdater;
 
 let mainWindow;
 let proxyProcess;
@@ -27,37 +34,46 @@ function createWindow() {
     height: 800,
     title: "Valis | Personal Game Journal Vault",
     backgroundColor: '#09090b',
-    icon: path.join(__dirname, '../public/images/logo.png'),
+    // ⚠️ PATH FIX: The main process is now in 'dist-electron/main', 
+    // so we go up 2 levels to find 'public' (or 'dist' in prod).
+    icon: path.join(__dirname, '../../public/images/logo.png'), 
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      // ✅ FIXED: Points to the compiled preload script relative to dist-electron/main
+      preload: path.join(__dirname, '../preload/index.js'),
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: false
     },
   });
 
-  // Remove the native menu bar (File, Edit, etc.) for a cleaner app look
+  // Preserve your clean UI logic
   mainWindow.removeMenu();
 
-  // CRITICAL: Force all external links (starting with http) to open in the real OS browser
-  // This fixes the "Manual Entry" link opening in a broken Electron window
+  // Preserve your External Link Handler (Critical for User Experience)
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https:') || url.startsWith('http:')) {
       shell.openExternal(url);
-      return { action: 'deny' }; // Stop Electron from opening it internally
+      return { action: 'deny' }; 
     }
     return { action: 'allow' };
   });
 
-  // Initialize achievement watcher with window reference for IPC
-  achievementWatcher.init(mainWindow);
+  // Preserve your Achievement Watcher
+  if (global.achievementWatcher) {
+      achievementWatcher.init(mainWindow);
+  }
 
-  // Load Vite Dev Server
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:3000');
-    mainWindow.webContents.openDevTools();
+  // ⚡️ NEW UNIFIED LOADING LOGIC
+  if (process.env.VITE_DEV_SERVER_URL) {
+    // In Dev: Load the URL provided by the Vite plugin
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    //mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadURL('http://localhost:3000');
+    // In Prod: Load the index.html from the dist folder
+    // Path: dist-electron/main/ -> ../../dist/index.html
+    mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
+
+    //mainWindow.webContents.openDevTools(); 
   }
 
   mainWindow.on('closed', () => {
@@ -123,8 +139,23 @@ function registerLegacyHandlers() {
 app.whenReady().then(async () => {
   await initDB();
 
+  /*
+  if (process.env.VITE_DEV_SERVER_URL) {
+    try {
+      // This downloads and installs React DevTools
+      await installExtension(REACT_DEVELOPER_TOOLS);
+      console.log('✅ React DevTools Installed');
+    } catch (err) {
+      console.log('❌ Error loading React DevTools:', err);
+    }
+  }
+    */
+
   // Updated to point to services folder and pass userData path for DB access
-  const proxyPath = path.join(__dirname, 'services/ProxyServer.js');
+  // In production/unified build, the proxy is a sibling file
+  const proxyPath = app.isPackaged || process.env.VITE_DEV_SERVER_URL
+    ? path.join(__dirname, 'ProxyServer.js') 
+    : path.join(__dirname, 'services/ProxyServer.js');
   console.log('Starting Proxy from:', proxyPath);
   
   proxyProcess = fork(proxyPath, [], {
@@ -132,6 +163,16 @@ app.whenReady().then(async () => {
   });
 
   createWindow();
+
+  /*
+  // ✅ NEW CODE (Works in Production)
+  globalShortcut.register('F12', () => {
+    mainWindow.webContents.toggleDevTools();
+  });
+  globalShortcut.register('CommandOrControl+Shift+I', () => {
+    mainWindow.webContents.toggleDevTools();
+  });
+  */
 
   registerGameHandlers();
   registerSessionHandlers();

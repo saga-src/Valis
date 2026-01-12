@@ -1,3 +1,4 @@
+
 import { ipcMain, Notification, app } from 'electron';
 import { handleImportSessions, handleExportSessions } from '../lib/excel.js';
 import FactoryResetService from '../services/FactoryResetService.js';
@@ -173,15 +174,29 @@ export function registerSystemHandlers() {
 
   // Startup Handlers
   ipcMain.handle('system:get-startup-status', async () => {
+    // In dev mode, app.getLoginItemSettings().openAtLogin might return false 
+    // because it isn't correctly registered in the OS.
     return app.getLoginItemSettings().openAtLogin;
   });
 
-  ipcMain.handle('system:toggle-startup', async (event, payload) => {
+  ipcMain.handle('system:toggle-startup', async (event, enabled) => {
+    console.log('[System] Toggling startup to:', enabled);
+    
+    // Core Electron Logic
     app.setLoginItemSettings({
-      openAtLogin: payload,
-      path: app.getPath('exe'),
-      args: ['--process-start-args', '--startup']
+      openAtLogin: enabled,
+      // On Windows, 'path' is important if we want to ensure the right exe is called.
+      // But for a portable app or standard install, Electron handles this usually.
+      path: app.isPackaged ? app.getPath('exe') : undefined,
     });
-    return app.getLoginItemSettings().openAtLogin;
+
+    // We return the actual status from the OS to confirm it worked.
+    // NOTE: In Unpackaged/Dev mode, this often returns false because 
+    // the OS doesn't recognize the ephemeral Electron process as a valid startup app.
+    const actualStatus = app.getLoginItemSettings().openAtLogin;
+    
+    // 💡 IMPROVEMENT: If we are in Dev mode, we return the requested value to 
+    // prevent the UI toggle from flipping back to OFF immediately.
+    return app.isPackaged ? actualStatus : enabled;
   });
 }

@@ -1,5 +1,6 @@
 
-const ALERT_SOUND_URL = '../../../public/sounds/touch_grass.mp3';
+import touchGrassSound from '../../../public/sounds/touch_grass.mp3';
+import appIcon from '../../../public/images/logo.png';
 
 export const triggerHealthAlert = (soundEnabled: boolean, toastEnabled: boolean, minutesPlayed: number) => {
   const hours = (minutesPlayed / 60).toFixed(1);
@@ -8,8 +9,10 @@ export const triggerHealthAlert = (soundEnabled: boolean, toastEnabled: boolean,
   // 1. Play Sound
   if (soundEnabled) {
     try {
-      const audio = new Audio(ALERT_SOUND_URL);
+      console.log('🔊 Playing health sound');
+      const audio = new Audio(touchGrassSound);
       audio.volume = 0.5;
+      audio.onerror = (e) => console.error('❌ Health alert audio file failed:', e);
       audio.play().catch(e => console.warn("Audio play failed (interaction needed?):", e));
     } catch (e) {
       console.error("Audio error", e);
@@ -23,7 +26,7 @@ export const triggerHealthAlert = (soundEnabled: boolean, toastEnabled: boolean,
     } else if (Notification.permission === "granted") {
         new Notification("🌱 Touch Grass!", {
             body: message,
-            icon: '/vite.svg',
+            icon: appIcon,
             silent: true // We handle sound manually if enabled
         });
     } else if (Notification.permission !== "denied") {
@@ -31,7 +34,7 @@ export const triggerHealthAlert = (soundEnabled: boolean, toastEnabled: boolean,
             if (permission === "granted") {
                 new Notification("🌱 Touch Grass!", {
                     body: message,
-                    icon: '/vite.svg',
+                    icon: appIcon,
                     silent: true
                 });
             }

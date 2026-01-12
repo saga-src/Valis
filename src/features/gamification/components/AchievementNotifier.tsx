@@ -2,6 +2,11 @@
 import React, { useEffect, useState } from 'react';
 import { AchievementShard, ShardItem } from './AchievementShard';
 
+// Import audio assets for Vite bundling
+import achievementSound from '../../../../public/sounds/achievements.mp3';
+import milestoneSound from '../../../../public/sounds/milestone_unlock.mp3';
+import protocolSound from '../../../../public/sounds/protocol_unlock.mp3';
+
 export const AchievementNotifier = () => {
   const [queue, setQueue] = useState<ShardItem[]>([]);
   const [current, setCurrent] = useState<ShardItem | null>(null);
@@ -9,7 +14,7 @@ export const AchievementNotifier = () => {
   // Helper to process notifications based on settings
   const handleNotification = async (
     item: ShardItem, 
-    soundPath: string, 
+    resolvedSoundUrl: string, 
     settingsPrefix: 'protocol' | 'achievement' | 'milestone'
   ) => {
     try {
@@ -28,20 +33,19 @@ export const AchievementNotifier = () => {
             // The Shard component will play the sound when it renders.
             setQueue((prev) => [...prev, {
                 ...item,
-                soundUrl: playSound ? soundPath : undefined
+                soundUrl: playSound ? resolvedSoundUrl : undefined
             }]);
         } else if (playSound) {
             // Case 3: Toast is OFF, but Sound is ON.
             // Play sound immediately since no visual component will mount to trigger it.
             try {
-                const audio = new Audio(soundPath);
+                const audio = new Audio(resolvedSoundUrl);
                 audio.volume = 0.5;
                 audio.play().catch(e => console.warn('Audio playback prevented:', e));
             } catch (e) {
                 console.warn('Audio error:', e);
             }
         }
-        // Case 4: Both OFF -> Do nothing.
     } catch (e) {
         console.error('Notification Error:', e);
     }
@@ -69,7 +73,7 @@ export const AchievementNotifier = () => {
             iconName: mark.iconName,
             type: 'protocol'
         },
-        '/sounds/protocol_unlock.mp3',
+        protocolSound,
         'protocol'
       );
     };
@@ -97,7 +101,7 @@ export const AchievementNotifier = () => {
                     iconUrl: details ? details.iconUrl : undefined,
                     type: 'default'
                 },
-                '/sounds/achievements.mp3',
+                achievementSound,
                 'achievement'
             );
         }
@@ -119,7 +123,7 @@ export const AchievementNotifier = () => {
                 type: 'milestone',
                 iconName: data.iconName
             },
-            '/sounds/milestone_unlock.mp3',
+            milestoneSound,
             'milestone'
         );
     });
@@ -138,7 +142,7 @@ export const AchievementNotifier = () => {
                 type: 'milestone',
                 iconName: 'Activity'
             },
-            '/sounds/milestone_unlock.mp3',
+            milestoneSound,
             'milestone'
         );
     };

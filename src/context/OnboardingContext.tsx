@@ -8,6 +8,7 @@ interface OnboardingContextType {
   activeTour: TourId;
   currentStep: number;
   isCompleted: boolean;
+  setCurrentStep: (step: number) => void;
   startTour: (tourId: TourId) => void;
   nextStep: () => void;
   prevStep: () => void;
@@ -104,6 +105,7 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       value={{
         activeTour,
         currentStep,
+        setCurrentStep,
         isCompleted,
         startTour,
         nextStep,
@@ -119,7 +121,7 @@ export const OnboardingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
 export const useOnboarding = () => {
   const context = useContext(OnboardingContext);
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useOnboarding must be used within an OnboardingProvider');
   }
   return context;

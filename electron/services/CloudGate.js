@@ -22,6 +22,11 @@ class CloudGate {
     this.lastRequestTime = 0;
     this.SUPABASE_URL = process.env.VITE_SUPABASE_URL || '';
     this.SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || '';
+    
+    console.log(`[CloudGate] Initialized. Target: ${this.SUPABASE_URL || 'MISSING_URL'}`);
+    if (!this.SUPABASE_ANON_KEY) {
+        console.error('[CloudGate] ⚠️ VITE_SUPABASE_ANON_KEY is missing! Cloud calls will fail.');
+    }
   }
 
   /**
@@ -38,7 +43,6 @@ class CloudGate {
     const now = Date.now();
     const elapsed = now - this.lastRequestTime;
 
-    // Adhere to 4 req/s (250ms gap)
     if (elapsed < 250) {
       setTimeout(() => this.processQueue(), 250 - elapsed);
       return;
@@ -50,7 +54,10 @@ class CloudGate {
       try {
         await task();
       } catch (error) {
-        console.error('[CloudGate] Task execution failed:', error.message);
+        console.error('🔥 [CloudGate] Upstream Request Failed:', error.message);
+        if (error.response) {
+            console.error('[CloudGate] Status:', error.response.status, 'Data:', error.response.data);
+        }
       }
       this.processQueue();
     }
@@ -83,6 +90,7 @@ class CloudGate {
    */
   async fetchIGDB(query, endpoint = 'games') {
     return this.enqueue(async () => {
+      console.log(`[CloudGate] Proxying IGDB: ${endpoint}`);
       const response = await axios.post(`${this.SUPABASE_URL}/functions/v1/valis-proxy/igdb`, query, {
         headers: {
           'Content-Type': 'text/plain',
@@ -100,6 +108,7 @@ class CloudGate {
    */
   async fetchSteamAchievements(steamId, appId) {
     return this.enqueue(async () => {
+      console.log(`[CloudGate] Proxying Steam Achievements: User ${steamId}, App ${appId}`);
       const response = await axios.get(`${this.SUPABASE_URL}/functions/v1/valis-proxy/steam/achievements`, {
         params: { steamId, appId },
         headers: {
@@ -113,11 +122,11 @@ class CloudGate {
 
   /**
    * Fetches Steam achievement definitions (schema) via the Cloud Proxy.
-   * Returns the array of achievements directly.
    */
   async fetchSteamSchema(appId) {
     return this.enqueue(async () => {
       try {
+        console.log(`[CloudGate] Proxying Steam Schema: App ${appId}`);
         const response = await axios.get(`${this.SUPABASE_URL}/functions/v1/valis-proxy/steam/schema`, {
           params: { appId },
           headers: {
@@ -126,7 +135,6 @@ class CloudGate {
             'Content-Type': 'application/json'
           }
         });
-        // Return the raw schema array if it exists
         return response.data?.game?.availableGameStats?.achievements || [];
       } catch (error) {
         console.warn(`[CloudGate] Schema fetch failed for ${appId}:`, error.message);

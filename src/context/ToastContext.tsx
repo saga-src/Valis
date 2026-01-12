@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { X, CheckCircle2, AlertCircle, Info } from 'lucide-react';
 import { cn } from '../lib/utils/cn';
 
@@ -23,7 +24,13 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
+  useEffect(() => {
+    console.log('🛡️ ToastProvider mounted');
+    return () => console.log('🛡️ ToastProvider unmounted');
+  }, []);
+
   const addToast = useCallback((message: string, type: ToastType) => {
+    console.log('🍞 Toast requested:', { message, type });
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
 

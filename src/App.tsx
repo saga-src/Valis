@@ -12,6 +12,9 @@ import { useAuth } from './context/AuthContext';
 import OnboardingWizard from './features/onboarding/OnboardingWizard';
 import { TourManager } from './features/onboarding/TourManager';
 
+// Import assets for bundling
+import achievementSound from '../public/sounds/achievements.mp3';
+
 // Lazy Pages
 const GameLibrary = lazy(() => import('./features/library/GameLibrary').then(module => ({ default: module.GameLibrary })));
 const SearchGame = lazy(() => import('./features/library/components/SearchGame').then(module => ({ default: module.SearchGame })));
@@ -125,8 +128,10 @@ const App: React.FC = () => {
     if (window.api && window.api.onPlaySound) {
         const removeListener = window.api.onPlaySound((type: string) => {
           if (type === 'achievement') {
-            const audio = new Audio('./sounds/achievements.mp3'); 
+            console.log('🔊 Playing achievement sound');
+            const audio = new Audio(achievementSound); 
             audio.volume = 0.5;
+            audio.onerror = (e) => console.error('❌ Achievement audio file failed:', e);
             audio.play().catch(e => console.error("Audio playback failed:", e));
           }
         });

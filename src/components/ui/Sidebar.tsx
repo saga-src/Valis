@@ -8,6 +8,7 @@ import { formatDuration } from '../../lib/utils/format';
 import { getCoverUrl } from '../../lib/api/igdb';
 // import { HardwareWidget } from '../widgets/HardwareWidget'; -- Disabled due to performance lag (v1.0)
 import { useMarkObserver } from '../../features/gamification/hooks/useMarkObserver';
+import logo from '../../../public/images/logo.png';
 
 export const Sidebar: React.FC = () => {
   const location = useLocation();
@@ -37,7 +38,7 @@ export const Sidebar: React.FC = () => {
         <div className="flex items-center gap-3 px-2 mb-6 w-full">
            {/* 1. Logo */}
            <img 
-             src="/images/logo.png" 
+             src={logo}
              alt="Valis Logo" 
              className="w-10 h-10 object-contain cursor-pointer active:scale-95 transition-transform" 
              onClick={() => reportSignal('LOGO_CLICK')}

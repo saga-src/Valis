@@ -1,3 +1,4 @@
+
 import { ipcMain, shell, BrowserWindow } from 'electron';
 import fs from 'fs/promises';
 import { db } from '../db/client.js';
@@ -79,8 +80,15 @@ export function registerSettingsHandlers() {
     });
 
     ipcMain.handle('settings:save', async (_, { key, value }) => {
-        await dbQueries.setSetting(key, value);
-        return { success: true };
+        console.log("📝 Backend received setting update:", { key, value });
+        try {
+            await dbQueries.setSetting(key, value);
+            console.log("✅ Setting saved");
+            return { success: true };
+        } catch (e) {
+            console.error("❌ Error saving setting:", e);
+            throw e;
+        }
     });
 
     // Linked Accounts
