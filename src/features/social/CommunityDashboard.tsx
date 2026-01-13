@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { SocialFeed } from './components/SocialFeed';
 import { LeaderboardsTab } from './components/LeaderboardsTab';
@@ -40,7 +39,7 @@ export default function CommunityDashboard() {
       fetchFriends();
       setAuthOpen(false); // Close modal if user logs in
     }
-  }, [user]);
+  }, [user, fetchRequests, fetchFriends]);
 
   const copyMyInfo = () => {
     const info = profile?.username || user?.id;

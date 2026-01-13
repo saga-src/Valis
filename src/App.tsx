@@ -1,4 +1,3 @@
-
 import React, { useEffect, Suspense, lazy, useRef } from 'react';
 // Fix: Import Routes and Route from local shim index file to avoid casing conflict with App.tsx
 import { Routes, Route, useLocation } from './app/index';
@@ -7,6 +6,7 @@ import { Sidebar } from './components/ui/Sidebar';
 import { DebugErrorBoundary } from './components/ui/DebugErrorBoundary';
 import { Loader2 } from 'lucide-react';
 import { SyncProgressToast } from './features/library/components/SyncProgressToast';
+import { UpdateToast } from './components/ui/UpdateToast';
 import { useMarkObserver } from './features/gamification/hooks/useMarkObserver';
 import { useAuth } from './context/AuthContext';
 import OnboardingWizard from './features/onboarding/OnboardingWizard';
@@ -79,6 +79,7 @@ const AppLayout: React.FC = () => {
       <TourManager />
 
       <SyncProgressToast />
+      <UpdateToast />
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background/50">
         <main 

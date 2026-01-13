@@ -93,6 +93,15 @@ export interface StorageApi {
   // Fix: Add openSteamApiKeyPage to StorageApi interface in types/electron.d.ts
   openSteamApiKeyPage: () => Promise<{ success: boolean }>;
 
+  // Updater
+  checkForUpdates: () => Promise<any>;
+  startDownload: () => Promise<any>;
+  quitAndInstall: () => void;
+  onUpdateAvailable: (callback: (info: any) => void) => () => void;
+  onUpdateProgress: (callback: (progress: any) => void) => () => void;
+  onUpdateDownloaded: (callback: (info: any) => void) => () => void;
+  onUpdateError: (callback: (error: string) => void) => () => void;
+
   // Startup
   getStartupStatus: () => Promise<boolean>;
   toggleStartup: (enabled: boolean) => Promise<boolean>;

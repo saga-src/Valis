@@ -2,6 +2,8 @@ import { useState } from 'react';
 
 export interface ProfileSettings {
   username: string;
+  displayName: string;
+  bio: string;
   title: string; // e.g. "Backlog Conqueror"
   avatarUrl: string;
   highlightBadgeId: string | null;
@@ -11,6 +13,8 @@ export interface ProfileSettings {
 
 const DEFAULT_PROFILE: ProfileSettings = {
   username: "Player One",
+  displayName: "Player One",
+  bio: "",
   title: "Novice Gamer",
   avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Felix",
   highlightBadgeId: null,

@@ -1,11 +1,11 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from '../../app/index';
 import { useAuth } from '../../context/AuthContext';
 import { useProfileData } from '../social/hooks/useProfileData';
 import { useUserProfile } from './hooks/useUserProfile';
-import { Loader2, CloudOff, UserPlus, MessageSquare } from 'lucide-react';
+import { Loader2, CloudOff, UserPlus, MessageSquare, Check, Clock } from 'lucide-react';
 import { PROGRESSION_TREE } from '../gamification/logic/milestones';
+import { useFriendSystem } from '../social/hooks/useFriendSystem';
 
 // Components
 import { ProfileHero } from './components/ProfileHero';
@@ -23,6 +23,7 @@ import ProfileShareModal from './ProfileShareModal';
 export const ProfilePage: React.FC = () => {
   const { userId } = useParams<{ userId?: string }>();
   const { user } = useAuth();
+  const { sendRequest, getFriendshipStatus } = useFriendSystem();
   
   // Determine context
   const isSelf = !userId || (user && user.id === userId);
@@ -38,7 +39,7 @@ export const ProfilePage: React.FC = () => {
   const loading = isGuest ? localLoading : cloudLoading;
   
   // Construct View Model
-  let displayProfile = null;
+  let displayProfile: any = null;
   
   if (isGuest) {
      displayProfile = {
@@ -56,10 +57,12 @@ export const ProfilePage: React.FC = () => {
      // Map Cloud Data to UI Model
      displayProfile = {
         identity: {
+            id: cloudProfile.id,
             username: cloudProfile.username,
             display_name: cloudProfile.display_name,
             avatar_url: cloudProfile.avatar_url || '',
-            title: cloudProfile.playstyle || 'Gamer'
+            title: cloudProfile.playstyle || 'Gamer',
+            bio: cloudProfile.bio || ''
         },
         leveling: {
             level: cloudProfile.level,
@@ -97,6 +100,30 @@ export const ProfilePage: React.FC = () => {
 
   const [isEditing, setIsEditing] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [friendStatus, setFriendStatus] = useState<'none' | 'friend' | 'pending' | 'incoming'>('none');
+  const [actionLoading, setActionLoading] = useState(false);
+
+  useEffect(() => {
+    const targetId = displayProfile?.identity?.id;
+
+    if (!isSelf && user && targetId) {
+        getFriendshipStatus(targetId).then(status => {
+            if (status.isFriend) setFriendStatus('friend');
+            else if (status.isPending) setFriendStatus('pending');
+            else if (status.isIncoming) setFriendStatus('incoming');
+            else setFriendStatus('none');
+        });
+    }
+  }, [isSelf, user, displayProfile?.identity?.id, getFriendshipStatus]);
+
+  const handleAddFriend = async () => {
+    if (!displayProfile?.identity.username) return;
+
+    setActionLoading(true);
+    await sendRequest(displayProfile.identity.username);
+    setFriendStatus('pending');
+    setActionLoading(false);
+  };
 
   if (loading) {
     return (
@@ -177,9 +204,29 @@ export const ProfilePage: React.FC = () => {
       {/* Social Actions (if not self) */}
       {!isSelf && (
           <div className="max-w-[1600px] mx-auto px-6 lg:px-8 mt-6 flex justify-end gap-3">
-              <button className="px-4 py-2 bg-primary text-primary-foreground font-bold rounded-xl flex items-center gap-2 text-sm shadow-sm hover:opacity-90 transition-all">
-                  <UserPlus size={16} /> Add Friend
-              </button>
+              {friendStatus === 'friend' ? (
+                  <div className="px-4 py-2 bg-green-500/10 text-green-500 border border-green-500/20 font-bold rounded-xl flex items-center gap-2 text-sm cursor-default">
+                      <Check size={16} /> Friends
+                  </div>
+              ) : friendStatus === 'incoming' ? (
+                  <div className="px-4 py-2 bg-blue-500/10 text-blue-500 border border-blue-500/20 font-bold rounded-xl flex items-center gap-2 text-sm cursor-default">
+                      <UserPlus size={16} /> Request Received
+                  </div>
+              ) : (
+                  <button 
+                    onClick={handleAddFriend}
+                    disabled={friendStatus === 'pending' || actionLoading}
+                    className={`px-4 py-2 font-bold rounded-xl flex items-center gap-2 text-sm shadow-sm transition-all ${
+                        friendStatus === 'pending' 
+                            ? 'bg-secondary text-muted-foreground cursor-not-allowed'
+                            : 'bg-primary text-primary-foreground hover:opacity-90 active:scale-95'
+                    }`}
+                  >
+                      {actionLoading ? <Loader2 size={16} className="animate-spin"/> : 
+                       friendStatus === 'pending' ? <Clock size={16} /> : <UserPlus size={16} />}
+                      {friendStatus === 'pending' ? 'Request Sent' : 'Add Friend'}
+                  </button>
+              )}
               <button className="px-4 py-2 border border-border bg-card hover:bg-muted font-bold rounded-xl flex items-center gap-2 text-sm transition-all">
                   <MessageSquare size={16} /> Message
               </button>
@@ -242,6 +289,8 @@ export const ProfilePage: React.FC = () => {
           onClose={() => setIsEditing(false)} 
           currentSettings={{
             username: displayProfile.identity.username,
+            displayName: displayProfile.identity.display_name || displayProfile.identity.username,
+            bio: displayProfile.identity.bio || '',
             title: displayProfile.identity.title,
             avatarUrl: displayProfile.identity.avatar_url,
             highlightBadgeId: null, 
@@ -263,6 +312,8 @@ export const ProfilePage: React.FC = () => {
           onClose={() => setIsSharing(false)}
           settings={{
             username: displayProfile.identity.username,
+            displayName: displayProfile.identity.display_name || displayProfile.identity.username,
+            bio: displayProfile.identity.bio || '',
             title: displayProfile.identity.title,
             avatarUrl: displayProfile.identity.avatar_url,
             highlightBadgeId: null,

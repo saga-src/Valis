@@ -121,6 +121,31 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('steam:sync-progress', subscription);
   },
 
+  // Updater
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  startDownload: () => ipcRenderer.invoke('update:start-download'),
+  quitAndInstall: () => ipcRenderer.invoke('update:quit-and-install'),
+  onUpdateAvailable: (callback) => {
+    const subscription = (_, info) => callback(info);
+    ipcRenderer.on('update:available', subscription);
+    return () => ipcRenderer.removeListener('update:available', subscription);
+  },
+  onUpdateProgress: (callback) => {
+    const subscription = (_, progress) => callback(progress);
+    ipcRenderer.on('update:progress', subscription);
+    return () => ipcRenderer.removeListener('update:progress', subscription);
+  },
+  onUpdateDownloaded: (callback) => {
+    const subscription = (_, info) => callback(info);
+    ipcRenderer.on('update:downloaded', subscription);
+    return () => ipcRenderer.removeListener('update:downloaded', subscription);
+  },
+  onUpdateError: (callback) => {
+    const subscription = (_, error) => callback(error);
+    ipcRenderer.on('update:error', subscription);
+    return () => ipcRenderer.removeListener('update:error', subscription);
+  },
+
   // Startup
   getStartupStatus: () => ipcRenderer.invoke('system:get-startup-status'),
   toggleStartup: (enabled) => ipcRenderer.invoke('system:toggle-startup', enabled),

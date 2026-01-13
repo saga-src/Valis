@@ -1,4 +1,3 @@
-
 import { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut } from 'electron';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import path from 'path';
@@ -136,20 +135,45 @@ function registerLegacyHandlers() {
   });
 }
 
+// ⚡ UPDATER LOGIC
+function setupAutoUpdater() {
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  autoUpdater.on('update-available', (info) => {
+    console.log('[Updater] Update available:', info.version);
+    mainWindow?.webContents.send('update:available', info);
+  });
+
+  autoUpdater.on('download-progress', (progressObj) => {
+    mainWindow?.webContents.send('update:progress', progressObj);
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log('[Updater] Update downloaded:', info.version);
+    mainWindow?.webContents.send('update:downloaded', info);
+  });
+
+  autoUpdater.on('error', (err) => {
+    console.error('[Updater] Error:', err);
+    mainWindow?.webContents.send('update:error', err.message);
+  });
+
+  ipcMain.handle('update:check', () => {
+    return autoUpdater.checkForUpdates();
+  });
+
+  ipcMain.handle('update:start-download', () => {
+    return autoUpdater.downloadUpdate();
+  });
+
+  ipcMain.handle('update:quit-and-install', () => {
+    autoUpdater.quitAndInstall();
+  });
+}
+
 app.whenReady().then(async () => {
   await initDB();
-
-  /*
-  if (process.env.VITE_DEV_SERVER_URL) {
-    try {
-      // This downloads and installs React DevTools
-      await installExtension(REACT_DEVELOPER_TOOLS);
-      console.log('✅ React DevTools Installed');
-    } catch (err) {
-      console.log('❌ Error loading React DevTools:', err);
-    }
-  }
-    */
 
   // Updated to point to services folder and pass userData path for DB access
   // In production/unified build, the proxy is a sibling file
@@ -163,16 +187,7 @@ app.whenReady().then(async () => {
   });
 
   createWindow();
-
-  /*
-  // ✅ NEW CODE (Works in Production)
-  globalShortcut.register('F12', () => {
-    mainWindow.webContents.toggleDevTools();
-  });
-  globalShortcut.register('CommandOrControl+Shift+I', () => {
-    mainWindow.webContents.toggleDevTools();
-  });
-  */
+  setupAutoUpdater();
 
   registerGameHandlers();
   registerSessionHandlers();
@@ -184,26 +199,8 @@ app.whenReady().then(async () => {
 
   gameWatcher.start(mainWindow, 5000);
 
-  // Initialize Auto-Updater
-  autoUpdater.checkForUpdatesAndNotify();
-
-  autoUpdater.on('update-available', () => {
-    mainWindow?.webContents.send('update-status', 'available');
-  });
-
-  autoUpdater.on('update-downloaded', () => {
-    mainWindow?.webContents.send('update-status', 'downloaded');
-    dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: 'Update Ready',
-      message: 'A new version of Valis has been downloaded. Restart now to install?',
-      buttons: ['Restart', 'Later']
-    }).then((result) => {
-      if (result.response === 0) {
-        autoUpdater.quitAndInstall(false, true);
-      }
-    });
-  });
+  // Initial check
+  autoUpdater.checkForUpdates();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

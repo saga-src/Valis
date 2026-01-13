@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../../lib/cloud/supabase';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
@@ -10,7 +10,7 @@ export const useFriendSystem = () => {
   const [friends, setFriends] = useState<any[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
 
-  const fetchRequests = async () => {
+  const fetchRequests = useCallback(async () => {
     if (!user) return;
     setLoadingRequests(true);
     const { data, error } = await supabase
@@ -26,27 +26,27 @@ export const useFriendSystem = () => {
     if (error) console.error("Error fetching requests:", error);
     else setRequests(data || []);
     setLoadingRequests(false);
-  };
+  }, [user]);
 
-  const fetchFriends = async () => {
+  const fetchFriends = useCallback(async () => {
     if (!user) return;
     const { data, error } = await supabase
       .from('friendships')
-      .select('friend:profiles!friend_id(id, username, avatar_url, subscription_tier)')
+      .select('friend:profiles!friend_id(id, username, avatar_url, playstyle)')
       .eq('user_id', user.id);
     
     if (error) console.error('Error fetching friends:', error);
     else setFriends(data?.map((f: any) => f.friend) || []);
-  };
+  }, [user]);
 
   useEffect(() => {
     if (user) {
         fetchRequests();
         fetchFriends();
     }
-  }, [user]);
+  }, [user, fetchRequests, fetchFriends]);
 
-  const sendRequest = async (targetUsername: string) => {
+  const sendRequest = useCallback(async (targetUsername: string) => {
     if (!user) return;
 
     try {
@@ -55,12 +55,12 @@ export const useFriendSystem = () => {
         .from('profiles')
         .select('id')
         .eq('username', targetUsername)
-        .single(); // Expecting exactly one result
+        .single(); 
 
       if (searchError || !profiles) throw new Error("User not found");
       if (profiles.id === user.id) throw new Error("You can't add yourself");
 
-      // 2. Send the request using the found ID
+      // 2. Send the request
       const { error: reqError } = await supabase
         .from('friend_requests')
         .insert({ 
@@ -77,9 +77,9 @@ export const useFriendSystem = () => {
     } catch (e: any) {
       toast.error(e.message);
     }
-  };
+  }, [user, toast]);
 
-  const acceptRequest = async (requestId: string, friendId: string) => {
+  const acceptRequest = useCallback(async (requestId: string, friendId: string) => {
     if (!user) return;
     
     try {
@@ -105,9 +105,9 @@ export const useFriendSystem = () => {
     } catch (e: any) {
       toast.error("Error accepting friend: " + e.message);
     }
-  };
+  }, [user, toast, fetchRequests, fetchFriends]);
 
-  const rejectRequest = async (requestId: string) => {
+  const rejectRequest = useCallback(async (requestId: string) => {
     const { error } = await supabase
       .from('friend_requests')
       .update({ status: 'rejected' })
@@ -116,11 +116,12 @@ export const useFriendSystem = () => {
     if (error) toast.error(error.message);
     else {
       toast.success("Request ignored");
-      fetchRequests(); // Refresh list
+      fetchRequests(); 
     }
-  };
+  }, [toast, fetchRequests]);
 
-  const removeFriend = async (friendId: string) => {
+  const removeFriend = useCallback(async (friendId: string) => {
+    if (!user) return;
     const { error } = await supabase
       .from('friendships')
       .delete()
@@ -130,9 +131,52 @@ export const useFriendSystem = () => {
     if (error) toast.error(error.message);
     else {
       toast.success("Friend removed");
-      fetchFriends(); // Refresh list
+      fetchFriends(); 
     }
-  };
+  }, [user, toast, fetchFriends]);
 
-  return { sendRequest, acceptRequest, rejectRequest, fetchRequests, requests, loadingRequests, friends, fetchFriends, removeFriend };
+  const getFriendshipStatus = useCallback(async (targetUserId: string) => {
+    if (!user || !targetUserId) return { isFriend: false, isPending: false, isIncoming: false };
+
+    try {
+        // 1. Check if already friends
+        const { data: friend } = await supabase
+          .from('friendships')
+          .select('user_id') 
+          .eq('user_id', user.id)
+          .eq('friend_id', targetUserId)
+          .maybeSingle();
+
+        if (friend) return { isFriend: true, isPending: false, isIncoming: false };
+
+        // 2. Check Outgoing Request
+        const { data: outgoing } = await supabase
+          .from('friend_requests')
+          .select('id')
+          .eq('sender_id', user.id)
+          .eq('receiver_id', targetUserId)
+          .eq('status', 'pending')
+          .maybeSingle();
+
+        if (outgoing) return { isFriend: false, isPending: true, isIncoming: false };
+
+        // 3. Check Incoming Request
+        const { data: incoming } = await supabase
+          .from('friend_requests')
+          .select('id')
+          .eq('sender_id', targetUserId)
+          .eq('receiver_id', user.id)
+          .eq('status', 'pending')
+          .maybeSingle();
+
+        if (incoming) return { isFriend: false, isPending: false, isIncoming: true };
+
+        return { isFriend: false, isPending: false, isIncoming: false };
+    } catch (error) {
+        console.error("Status check failed:", error);
+        return { isFriend: false, isPending: false, isIncoming: false };
+    }
+  }, [user]);
+
+  return { sendRequest, acceptRequest, rejectRequest, fetchRequests, requests, loadingRequests, friends, fetchFriends, removeFriend, getFriendshipStatus };
 };
