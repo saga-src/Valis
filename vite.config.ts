@@ -1,4 +1,5 @@
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -6,6 +7,9 @@ import electron from 'vite-plugin-electron/simple';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Read package.json to extract the version number
+const packageJson = JSON.parse(fs.readFileSync('./package.json', 'utf-8'));
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
@@ -59,6 +63,7 @@ export default defineConfig(({ mode }) => {
         }
       },
       define: {
+        'import.meta.env.PACKAGE_VERSION': JSON.stringify(packageJson.version),
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
       },

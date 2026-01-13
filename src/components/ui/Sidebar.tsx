@@ -15,7 +15,7 @@ export const Sidebar: React.FC = () => {
   const { activeSession, elapsed, stopTimer } = useSessionManager();
   const { reportSignal } = useMarkObserver();
 
-  const version = '1.0.0';
+  const version = import.meta.env.PACKAGE_VERSION || '1.0.0';
 
   const navItems = [
     { to: '/', icon: Library, label: 'My Library', id: 'nav-library' },

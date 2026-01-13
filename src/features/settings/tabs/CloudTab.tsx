@@ -5,6 +5,7 @@ import { useToast } from '../../../context/ToastContext';
 import { useAutoSync } from '../hooks/useAutoSync';
 import { LogoutModal } from '../../../components/ui/LogoutModal';
 import { AuthWidget } from '../../auth/components/AuthWidget';
+import { supabase } from '../../../lib/cloud/supabase';
 
 export const CloudTab = () => {
   const { user, profile, signOut, loading } = useAuth();
@@ -49,22 +50,64 @@ export const CloudTab = () => {
   };
 
   const handleProfileSync = async () => {
+    if (!user) {
+      toast.error("You must be logged in to sync stats.");
+      return;
+    }
+
     try {
       setIsSyncing(true);
-      if (window.api?.getSyncStats) {
-        const stats = await window.api.getSyncStats();
-        if (stats && user) {
-          // In a full implementation, we'd upload these stats to Supabase here
-          toast.success("Profile stats calculated and ready for sync.");
-        } else {
-          toast.error("Failed to calculate stats or no user session.");
-        }
+
+      // 1. Calculate Stats Locally (using the robust backend aggregation)
+      const syncData = await window.api.getSyncStats();
+
+      if (!syncData || !syncData.stats) {
+        throw new Error("Failed to calculate local stats.");
       }
+
+      const { stats, leaderboard_entries } = syncData;
+
+      // 2. Upload to 'player_stats' Table
+      const { error: profileError } = await supabase
+        .from('player_stats')
+        .upsert({
+          user_id: user.id,
+          total_playtime: stats.total_playtime_seconds,
+          games_owned: stats.collection_count,
+          games_beaten: stats.campaigns_beat,
+          total_platinum: stats.perfect_games,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' });
+
+      if (profileError) throw profileError;
+
+      // 3. Upload to 'leaderboards' Table
+      if (leaderboard_entries && leaderboard_entries.length > 0) {
+        const leaderboardRows = leaderboard_entries.map((entry: any) => ({
+          user_id: user.id,
+          category: entry.category,
+          sub_category: entry.sub_category || 'global', // ✅ FIX: Dynamic sub-category
+          period_type: entry.period_type,
+          period_key: entry.period_key,
+          score: entry.score,
+          updated_at: new Date().toISOString()
+        }));
+
+        const { error: lbError } = await supabase
+          .from('leaderboards')
+          .upsert(leaderboardRows, { 
+            onConflict: 'user_id, category, sub_category, period_type, period_key' 
+          });
+
+        if (lbError) throw lbError;
+      }
+
+      toast.success("Profile stats and leaderboards synced successfully!");
+    } catch (e: any) {
+      console.error("Sync Error:", e);
+      toast.error(`Sync failed: ${e.message || 'Unknown error'}`);
+    } finally {
       setIsSyncing(false);
-    } catch (e) {
-      console.error(e);
-      setIsSyncing(false);
-      toast.error("Failed to sync profile stats.");
     }
   };
 

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../lib/cloud/supabase';
 import { useAuth } from '../../../context/AuthContext';
@@ -30,9 +29,23 @@ const PERIODS: { id: Period; label: string }[] = [
   { id: 'all_time', label: 'All Time' },
 ];
 
+// ✅ UPDATE: Match the 15 Core Archetypes defined in statsSync.js
 const GENRES = [
-  'RPG', 'Action', 'Adventure', 'Strategy', 'Shooter', 
-  'Simulation', 'Puzzle', 'Racing', 'Sports', 'Fighting', 'Platform'
+  'RPG', 
+  'Action', 
+  'Fighting', 
+  'Adventure', 
+  'Narrative',      // Visual Novel + Point & Click
+  'Strategy', 
+  'MOBA', 
+  'Tactical', 
+  'Card & Board', 
+  'Shooter', 
+  'Simulation', 
+  'Sports',         // Includes Racing
+  'Platform', 
+  'Puzzle', 
+  'Arcade'
 ];
 
 const TABS = [
