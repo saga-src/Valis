@@ -1,6 +1,5 @@
-
 import { useMemo } from 'react';
-import { getTrueTime } from '../utils/libraryUtils';
+import { getTotalPlaytimeSeconds } from '../../../lib/utils/format'; // Import the shared utility
 
 export const useLibrarySort = (
   processedGames: any[], 
@@ -11,14 +10,13 @@ export const useLibrarySort = (
     const sorted = [...processedGames].sort((a, b) => {
         const dir = settings.sortDirection === 'asc' ? 1 : -1;
 
-        // Force cast to bypass strict SortOption literal check
         switch (settings.sortBy as any) {
             case 'name':
             case 'alphabetical':
                 const nameA = a.name || a.title || '';
                 const nameB = b.name || b.title || '';
                 return nameA.localeCompare(nameB) * dir;
-            
+
             case 'score':
             case 'rating':
                 return ((a.final_score ?? -1) - (b.final_score ?? -1)) * dir;
@@ -27,12 +25,13 @@ export const useLibrarySort = (
             case 'timePlayed':
             case 'playtime':
             case 'total_playtime':
-                return (getTrueTime(a) - getTrueTime(b)) * dir;
+                // ✅ FIX: Use the shared utility for consistent sorting
+                return (getTotalPlaytimeSeconds(a) - getTotalPlaytimeSeconds(b)) * dir;
 
             case 'release':
             case 'releaseDate':
                 return ((a.first_release_date || 0) - (b.first_release_date || 0)) * dir;
-            
+
             case 'lastPlayed':
                 return ((lastPlayedMap[a.id] || 0) - (lastPlayedMap[b.id] || 0)) * dir;
 

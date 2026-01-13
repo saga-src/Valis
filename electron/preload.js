@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('MILESTONE_UNLOCKED', subscription);
   },
   addPlaytimeXP: (amount) => ipcRenderer.invoke('addPlaytimeXP', amount),
+  getSyncStats: () => ipcRenderer.invoke('gamification:get-sync-stats'),
 
   // System
   factoryReset: (options) => ipcRenderer.invoke('system:factory-reset', options),

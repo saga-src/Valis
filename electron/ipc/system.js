@@ -1,10 +1,10 @@
-
 import { ipcMain, Notification, app } from 'electron';
 import { handleImportSessions, handleExportSessions } from '../lib/excel.js';
 import FactoryResetService from '../services/FactoryResetService.js';
 import path from 'path';
 import si from 'systeminformation';
 import { db } from '../db/client.js';
+import { getProfileSyncStats } from '../db/queries.js';
 
 // Define all tables that contain user data.
 // ORDER MATTERS: Children (tables with foreign keys) must come before Parents.
@@ -198,5 +198,15 @@ export function registerSystemHandlers() {
     // 💡 IMPROVEMENT: If we are in Dev mode, we return the requested value to 
     // prevent the UI toggle from flipping back to OFF immediately.
     return app.isPackaged ? actualStatus : enabled;
+  });
+
+  // Gamification Sync Stats
+  ipcMain.handle('gamification:get-sync-stats', async () => {
+    try {
+      return await getProfileSyncStats();
+    } catch (error) {
+      console.error('Sync Stats Error:', error);
+      return null;
+    }
   });
 }

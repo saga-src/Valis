@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { Cloud, LogOut, Loader2, User } from 'lucide-react';
+import { Cloud, LogOut, Loader2, User, RefreshCw, Database } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { useAutoSync } from '../hooks/useAutoSync';
@@ -49,6 +48,39 @@ export const CloudTab = () => {
     }
   };
 
+  const handleProfileSync = async () => {
+    try {
+      setIsSyncing(true);
+      if (window.api?.getSyncStats) {
+        const stats = await window.api.getSyncStats();
+        if (stats && user) {
+          // In a full implementation, we'd upload these stats to Supabase here
+          toast.success("Profile stats calculated and ready for sync.");
+        } else {
+          toast.error("Failed to calculate stats or no user session.");
+        }
+      }
+      setIsSyncing(false);
+    } catch (e) {
+      console.error(e);
+      setIsSyncing(false);
+      toast.error("Failed to sync profile stats.");
+    }
+  };
+
+  const handleDatabaseSync = async () => {
+    try {
+      setIsSyncing(true);
+      await performCloudUpload();
+      toast.success("Database backup synchronized to cloud.");
+      setIsSyncing(false);
+    } catch (e) {
+      console.error(e);
+      setIsSyncing(false);
+      toast.error("Database backup failed.");
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -65,32 +97,61 @@ export const CloudTab = () => {
       </div>
 
       {user ? (
-        <div className="p-6 border rounded-xl bg-card transition-all hover:shadow-md">
-           <div className="flex items-center gap-6">
-              <div className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center text-4xl overflow-hidden">
-                {profile?.avatar_url ? (
-                  <img src={profile.avatar_url} alt={profile.username} className="w-full h-full object-cover" />
-                ) : (
-                  <span>{profile?.username?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase()}</span>
-                )}
-              </div>
-              
-              <div className="flex-1">
-                <h3 className="text-xl font-bold">{profile?.username || 'Valis User'}</h3>
-                <p className="text-sm text-muted-foreground">{user.email}</p>
-                <div className="mt-2 inline-flex items-center gap-2 px-2 py-1 bg-green-500/10 text-green-500 text-xs font-bold rounded-md border border-green-500/20">
-                   <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                   Connected
+        <div className="space-y-6">
+          <div className="p-6 border rounded-xl bg-card transition-all hover:shadow-md">
+            <div className="flex items-center gap-6">
+                <div className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center text-4xl overflow-hidden">
+                  {profile?.avatar_url ? (
+                    <img src={profile.avatar_url} alt={profile.username} className="w-full h-full object-cover" />
+                  ) : (
+                    <span>{profile?.username?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase()}</span>
+                  )}
                 </div>
-              </div>
+                
+                <div className="flex-1">
+                  <h3 className="text-xl font-bold">{profile?.username || 'Valis User'}</h3>
+                  <p className="text-sm text-muted-foreground">{user.email}</p>
+                  <div className="mt-2 inline-flex items-center gap-2 px-2 py-1 bg-green-500/10 text-green-500 text-xs font-bold rounded-md border border-green-500/20">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                    Connected
+                  </div>
+                </div>
 
+                <button 
+                  onClick={() => setShowLogoutModal(true)}
+                  className="px-4 py-2 border border-destructive/30 text-destructive hover:bg-destructive/10 rounded-lg text-sm font-bold transition-all flex items-center gap-2"
+                >
+                  <LogOut size={16} /> Disconnect
+                </button>
+            </div>
+          </div>
+
+          {/* Manual Sync Controls */}
+          <div className="p-6 border rounded-xl bg-card transition-all hover:shadow-md">
+            <h3 className="text-sm font-bold uppercase text-muted-foreground tracking-widest mb-4">Manual Operations</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <button 
-                onClick={() => setShowLogoutModal(true)}
-                className="px-4 py-2 border border-destructive/30 text-destructive hover:bg-destructive/10 rounded-lg text-sm font-bold transition-all flex items-center gap-2"
+                onClick={handleProfileSync}
+                disabled={isSyncing}
+                className="flex items-center justify-center gap-3 p-4 bg-muted/30 border border-border rounded-xl hover:bg-muted/50 hover:border-primary/50 transition-all font-bold text-sm group"
               >
-                <LogOut size={16} /> Disconnect
+                {isSyncing ? <Loader2 size={18} className="animate-spin text-primary" /> : <RefreshCw size={18} className="text-primary group-hover:rotate-180 transition-transform duration-500" />}
+                Sync Profile Stats
               </button>
-           </div>
+              
+              <button 
+                onClick={handleDatabaseSync}
+                disabled={isSyncing}
+                className="flex items-center justify-center gap-3 p-4 bg-muted/30 border border-border rounded-xl hover:bg-muted/50 hover:border-primary/50 transition-all font-bold text-sm group"
+              >
+                {isSyncing ? <Loader2 size={18} className="animate-spin text-primary" /> : <Database size={18} className="text-primary" />}
+                Backup Database
+              </button>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-4 italic">
+              Note: Auto-sync triggers every 5 minutes and after major library updates.
+            </p>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

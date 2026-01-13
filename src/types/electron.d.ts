@@ -58,6 +58,7 @@ export interface StorageApi {
   unlockMark: (markId: string) => Promise<boolean>;
   onMilestoneUnlocked: (callback: (data: any) => void) => () => void;
   addPlaytimeXP: (amount: number) => Promise<number>;
+  getSyncStats: () => Promise<any>;
 
   // Watch Paths Settings
   getWatchPaths: () => Promise<Array<{ id: number; path: string; type: 'goldberg' | 'codex'; recursive: number }>>;
