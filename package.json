@@ -1,7 +1,7 @@
 {
   "name": "valis",
   "private": true,
-  "version": "1.0.4",
+  "version": "1.0.5",
   "type": "module",
   "main": "dist-electron/main/main.js",
   "scripts": {
@@ -48,7 +48,8 @@
     "wa-sqlite": "^1.0.0",
     "wait-on": "^7.2.0",
     "xlsx": "^0.18.5",
-    "zustand": "^5.0.0"
+    "zustand": "^5.0.0",
+    "react-virtuoso": "^4.12.3"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.2",

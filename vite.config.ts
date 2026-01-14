@@ -1,3 +1,4 @@
+
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -28,7 +29,7 @@ export default defineConfig(({ mode }) => {
                 build: {
                     outDir: 'dist-electron/main', 
                     rollupOptions: {
-                        external: ['better-sqlite3']
+                        external: ['better-sqlite3', 'ps-list']
                     }
                 }
             }
