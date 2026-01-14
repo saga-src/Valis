@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../lib/cloud/supabase';
 import { useAuth } from '../../../context/AuthContext';
 import { Trophy, Clock, Flag, Crown, User, Gamepad2, Award, Users, Globe, Star, Sparkles } from 'lucide-react';
@@ -29,13 +29,13 @@ const PERIODS: { id: Period; label: string }[] = [
   { id: 'all_time', label: 'All Time' },
 ];
 
-// ✅ UPDATE: Match the 15 Core Archetypes defined in statsSync.js
+// ✅ UPDATE: Complete 15 Core Archetypes to match Backend Sync
 const GENRES = [
   'RPG', 
   'Action', 
   'Fighting', 
   'Adventure', 
-  'Narrative',      // Visual Novel + Point & Click
+  'Narrative',      // Visual Novels + Point & Click
   'Strategy', 
   'MOBA', 
   'Tactical', 
@@ -219,7 +219,7 @@ export const LeaderboardsTab = () => {
         {/* Row 1: 3-Column Layout */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             
-            {/* Left: View Mode Toggle (Now unlocked for everyone) */}
+            {/* Left: View Mode Toggle */}
             <div className="flex bg-muted/40 p-1 rounded-full border border-border/40 shrink-0 self-center md:self-auto">
                 <button
                     onClick={() => setViewMode('global')}
@@ -289,23 +289,25 @@ export const LeaderboardsTab = () => {
             })}
         </div>
 
-        {/* Row 3 (Conditional): Genre */}
+        {/* Row 3 (Conditional): Genre Selector - Scrollable Container */}
         {activeTab === 'genre' && (
-            <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar snap-x justify-center">
-                {GENRES.map(g => (
-                    <button
-                        key={g}
-                        onClick={() => setSelectedGenre(g)}
-                        className={cn(
-                            "px-3 py-1 rounded-md border text-[10px] font-bold uppercase tracking-wider whitespace-nowrap snap-start transition-colors",
-                            selectedGenre === g
-                                ? "bg-accent text-accent-foreground border-accent-foreground/20"
-                                : "bg-transparent border-transparent text-muted-foreground hover:bg-muted"
-                        )}
-                    >
-                        {g}
-                    </button>
-                ))}
+            <div className="w-full overflow-x-auto pb-2 mb-4 scrollbar-hide"> 
+                <div className="flex gap-2 min-w-max px-1 justify-center">
+                    {GENRES.map(genre => (
+                        <button
+                            key={genre}
+                            onClick={() => setSelectedGenre(genre)}
+                            className={cn(
+                                "px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap", 
+                                selectedGenre === genre 
+                                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25 scale-105" 
+                                    : "bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                            )}
+                        >
+                            {genre}
+                        </button>
+                    ))}
+                </div>
             </div>
         )}
       </div>

@@ -3,6 +3,7 @@ import { HashRouter } from './index';
 import { ToastProvider } from '../context/ToastContext';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { OnboardingProvider } from '../context/OnboardingContext';
+import { PresenceProvider, usePresence } from '../context/PresenceContext';
 import { getSavedTheme, applyTheme } from '../lib/theme';
 import { useHealthMonitor } from '../features/health/useHealthMonitor';
 import { useSessionSync } from '../features/session-tracker/useSessionSync';
@@ -12,6 +13,25 @@ import { useSyncStore } from '../store/syncStore';
 import { useAutoSync } from '../features/settings/hooks/useAutoSync';
 import { useAchievements } from '../features/achievements/hooks/useAchievements';
 import { useMilestones } from '../features/gamification/hooks/useMilestones';
+import { useSessionStore } from '../features/session-tracker/store';
+
+/**
+ * Syncs session state to Supabase Presence automatically.
+ */
+const PresenceSyncService: React.FC = () => {
+  const { updateActivity } = usePresence();
+  const activeSession = useSessionStore(state => state.activeSession);
+
+  useEffect(() => {
+    if (activeSession) {
+      updateActivity('playing', activeSession.gameTitle);
+    } else {
+      updateActivity('online');
+    }
+  }, [activeSession, updateActivity]);
+
+  return null;
+};
 
 /**
  * A helper component to run hooks that rely on Router Context
@@ -55,6 +75,7 @@ const AppBackgroundServices: React.FC = () => {
   return (
     <>
       <GamificationWatcher />
+      <PresenceSyncService />
     </>
   );
 };
@@ -73,13 +94,15 @@ export const AppProviders: React.FC<AppProvidersProps> = ({ children }) => {
   return (
     <ToastProvider>
       <AuthProvider>
-        <OnboardingProvider>
-          <HashRouter>
-            <AppBackgroundServices />
-            <AchievementNotifier />
-            {children}
-          </HashRouter>
-        </OnboardingProvider>
+        <PresenceProvider>
+          <OnboardingProvider>
+            <HashRouter>
+              <AppBackgroundServices />
+              <AchievementNotifier />
+              {children}
+            </HashRouter>
+          </OnboardingProvider>
+        </PresenceProvider>
       </AuthProvider>
     </ToastProvider>
   );

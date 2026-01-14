@@ -69,14 +69,10 @@ export default function EditProfileModal({ isOpen, onClose, currentSettings, unl
         onSave(formData);
         onClose();
 
-        // 3. Trigger full reload to refresh all context/sidebar data
-        setTimeout(() => {
-            window.location.reload();
-        }, 500);
-
     } catch (error: any) {
         console.error("Profile Update Error:", error);
         toast.error("Failed to update profile: " + error.message);
+    } finally {
         setIsSaving(false);
     }
   };

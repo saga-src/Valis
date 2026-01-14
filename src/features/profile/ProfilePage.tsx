@@ -30,7 +30,7 @@ export const ProfilePage: React.FC = () => {
   const isGuest = !user && !userId;
 
   // 1. Fetch Cloud Data (if applicable)
-  const { data: cloudProfile, isLoading: cloudLoading } = useProfileData(userId);
+  const { data: cloudProfile, isLoading: cloudLoading, refetch: refreshCloud } = useProfileData(userId);
 
   // 2. Fetch Local Data (Fallback for Guest)
   const { profile: localProfile, loading: localLoading, refresh: refreshLocal } = useUserProfile();
@@ -301,6 +301,7 @@ export const ProfilePage: React.FC = () => {
           onSave={async (newSettings) => {
               setIsEditing(false);
               if (isGuest) refreshLocal();
+              else await refreshCloud();
           }}
         />
       )}

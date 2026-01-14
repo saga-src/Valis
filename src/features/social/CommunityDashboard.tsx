@@ -2,16 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { SocialFeed } from './components/SocialFeed';
 import { LeaderboardsTab } from './components/LeaderboardsTab';
 import { useFriendSystem } from './hooks/useFriendSystem';
-import { Users, UserPlus, Fingerprint, Globe, Check, X, UserMinus, Trophy, Share2, ClipboardCheck, Cloud, Loader2, LogIn, Lock } from 'lucide-react';
+import { Users, UserPlus, Fingerprint, Globe, Check, X, UserMinus, Trophy, Share2, ClipboardCheck, Cloud, Loader2, LogIn, Lock, Gamepad2, Clock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { cn } from '../../lib/utils/cn';
 import { useNavigate } from '../../app/index';
 import { AuthWidget } from '../auth/components/AuthWidget';
 import { motion, AnimatePresence } from 'framer-motion';
+import { usePresence } from '../../context/PresenceContext';
 
 export default function CommunityDashboard() {
   const { user, profile, loading: authLoading } = useAuth();
+  const { onlineUsers } = usePresence();
   const { 
     sendRequest, 
     requests, 
@@ -51,6 +53,14 @@ export default function CommunityDashboard() {
     } else {
         toast.error("Not connected to cloud.");
     }
+  };
+
+  // Helper to format duration
+  const getDuration = (startedAt?: string) => {
+    if (!startedAt) return '';
+    const diff = Math.floor((Date.now() - new Date(startedAt).getTime()) / 60000); // minutes
+    if (diff < 0) return 'Just started';
+    return diff < 60 ? `${diff}m` : `${Math.floor(diff/60)}h ${diff%60}m`;
   };
 
   if (authLoading) {
@@ -283,40 +293,69 @@ export default function CommunityDashboard() {
                     <p className="text-[10px] text-muted-foreground/60 mt-1 leading-relaxed">Transmit your unique identity code to establish a connection with other operatives.</p>
                   </div>
                 ) : (
-                  friends.map((friend: any) => (
-                    <div 
-                      key={friend.id} 
-                      className="group flex items-center justify-between p-3 bg-muted/20 border border-transparent rounded-xl hover:border-primary/20 hover:bg-muted/40 transition-all cursor-pointer"
-                      onClick={() => navigate(`/profile/${friend.id}`)}
-                    >
-                      <div className="flex items-center gap-3 overflow-hidden">
-                        <div className="relative shrink-0">
-                          <img 
-                            src={friend.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${friend.username}`}
-                            className="w-10 h-10 rounded-full bg-muted object-cover border border-white/5 shadow-md" 
-                            alt={friend.username}
-                          />
-                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-card shadow-sm" />
-                        </div>
-                        <div className="flex flex-col min-w-0">
-                          <span className="text-sm font-black truncate text-foreground group-hover:text-primary transition-colors leading-none">{friend.username || 'Unknown'}</span>
-                          <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Level {friend.level || 1} • Online</span>
-                        </div>
-                      </div>
-                      
-                      <button 
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            if (confirm(`Sever link with ${friend.username}?`)) {
-                                removeFriend(friend.id);
-                            }
-                        }}
-                        className="opacity-0 group-hover:opacity-100 p-2 text-muted-foreground hover:text-red-500 transition-all rounded-lg hover:bg-red-500/10"
+                  friends.map((friend: any) => {
+                    const presence = onlineUsers[friend.id];
+                    const isOnline = !!presence;
+                    const isPlaying = presence?.status === 'playing';
+
+                    return (
+                      <div 
+                        key={friend.id} 
+                        className="group flex items-center justify-between p-3 bg-muted/20 border border-transparent rounded-xl hover:border-primary/20 hover:bg-muted/40 transition-all cursor-pointer"
+                        onClick={() => navigate(`/profile/${friend.id}`)}
                       >
-                        <UserMinus size={14} />
-                      </button>
-                    </div>
-                  ))
+                        <div className="flex items-center gap-3 overflow-hidden">
+                          <div className="relative shrink-0">
+                            <img 
+                              src={friend.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${friend.username}`}
+                              className="w-10 h-10 rounded-full bg-muted object-cover border border-white/5 shadow-md" 
+                              alt={friend.username}
+                            />
+                            <div className={cn(
+                                "absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-card shadow-sm",
+                                isPlaying ? "bg-purple-500" : (isOnline ? "bg-emerald-500" : "bg-zinc-500")
+                            )} />
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-sm font-black truncate text-foreground group-hover:text-primary transition-colors leading-none">{friend.username || 'Unknown'}</span>
+                            <div className="flex items-center gap-1.5 mt-1">
+                                {isPlaying ? (
+                                    <>
+                                        <Gamepad2 size={10} className="text-purple-400" />
+                                        <span className="text-[9px] font-bold text-purple-400 uppercase tracking-wider truncate max-w-[120px]">
+                                            {presence.game_title || 'Playing'}
+                                        </span>
+                                        <span className="text-[9px] text-muted-foreground font-mono">
+                                            {getDuration(presence.started_at)}
+                                        </span>
+                                    </>
+                                ) : isOnline ? (
+                                    <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest">
+                                        Online
+                                    </span>
+                                ) : (
+                                    <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
+                                        Offline
+                                    </span>
+                                )}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <button 
+                          onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm(`Sever link with ${friend.username}?`)) {
+                                  removeFriend(friend.id);
+                              }
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-2 text-muted-foreground hover:text-red-500 transition-all rounded-lg hover:bg-red-500/10"
+                        >
+                          <UserMinus size={14} />
+                        </button>
+                      </div>
+                    );
+                  })
                 )}
               </div>
           </div>
