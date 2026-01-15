@@ -384,3 +384,23 @@ export async function factoryReset() {
     // 3. Delete Configuration
     await db.deleteFrom('settings').execute();
 }
+
+// 🟢 1. Migration for new column
+export const migrateCoverColumn = async () => {
+  try {
+    // Attempt to add the column. Will fail silently if it exists.
+    rawDb.prepare("ALTER TABLE games ADD COLUMN local_cover_path TEXT").run();
+  } catch (e) {
+    // Column likely already exists, ignore
+  }
+};
+
+// 🟢 2. Update cover path
+export const updateGameLocalCover = (gameId, filePath) => {
+    // Normalize path for Windows (File protocol needs forward slashes)
+    // Example: F:\Valis\cache\1.jpg -> F:/Valis/cache/1.jpg
+    const safePath = filePath ? filePath.replace(/\\/g, '/') : null;
+    
+    const stmt = rawDb.prepare("UPDATE games SET local_cover_path = ? WHERE id = ?");
+    stmt.run(safePath, String(gameId));
+};

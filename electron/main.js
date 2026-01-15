@@ -1,3 +1,4 @@
+
 import { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut } from 'electron';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import path from 'path';
@@ -11,6 +12,7 @@ import { registerSystemHandlers } from './ipc/system.js';
 import { setupAchievementsHandlers } from './ipc/achievements.js';
 import { registerSettingsHandlers } from './ipc/settings.js';
 import { registerGamificationHandlers } from './ipc/gamification.js'; // NEW
+import { registerImageHandlers } from './ipc/images.js'; // NEW
 import { gameWatcher } from './services/ProcessWatcher.js';
 import { achievementWatcher } from './services/FileWatcherService.js';
 import * as igdb from './lib/igdb.js';
@@ -38,7 +40,7 @@ function createWindow() {
     icon: path.join(__dirname, '../../public/images/logo.png'), 
     webPreferences: {
       // ✅ FIXED: Points to the compiled preload script relative to dist-electron/main
-      preload: path.join(__dirname, '../preload/index.js'),
+      preload: path.join(__dirname, '../preload/index.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: false
@@ -194,7 +196,8 @@ app.whenReady().then(async () => {
   registerSystemHandlers();
   setupAchievementsHandlers(mainWindow);
   registerSettingsHandlers();
-  registerGamificationHandlers(); // Register new handlers
+  registerGamificationHandlers(); 
+  registerImageHandlers(); // Register new image handler
   registerLegacyHandlers();
 
   gameWatcher.start(mainWindow, 5000);

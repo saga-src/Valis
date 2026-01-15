@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useMemo } from 'react';
 import { getLibrary, getAllSessions } from '../../../lib/storage';
 import { STORE_NAMES, resolvePlatformHardwareAndStores } from '../utils/libraryUtils';
@@ -23,6 +24,13 @@ export const useLibraryData = () => {
     };
     fetchData();
   }, []);
+
+  // 🟢 Trigger Background Caching
+  useEffect(() => {
+    if (games.length > 0 && window.api?.cacheLibraryImages) {
+        window.api.cacheLibraryImages(games);
+    }
+  }, [games]);
 
   // Compute unique hardware platforms and digital stores via utility
   const { platforms, stores } = useMemo(() => 

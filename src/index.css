@@ -159,6 +159,12 @@
   .custom-scrollbar { scrollbar-gutter: stable; }
 }
 
+/* Only apply the gap in Museum Mode */
+div[data-layout="museum"]::-webkit-scrollbar-track {
+    margin-top: var(--header-height, 0px);
+    background: transparent;
+}
+
 /* --- COMPONENTS: HEATMAP --- */
 .react-calendar-heatmap text { @apply text-[10px] fill-muted-foreground font-mono; }
 .react-calendar-heatmap .color-empty { @apply fill-muted/30; }

@@ -1,4 +1,3 @@
-
 import React from 'react';
 // Fix: Import Link and useNavigate from local shim index file to avoid casing conflict with App.tsx
 import { Link, useNavigate } from '../../../app/index';
@@ -66,6 +65,12 @@ export const GameCard: React.FC<GameCardProps> = ({
   
   const showBadge = settings.showRating && (hasUserScore || hasGlobalScore);
 
+  // 1. Logic: DB Path (Priority) -> Web URL (Fallback)
+  // Ensure we prepend file:// if it's a local path
+  const coverSrc = game.local_cover_path 
+    ? `file://${game.local_cover_path}` 
+    : game.cover_url;
+
   return (
     <Link
       to={primaryPath}
@@ -79,10 +84,18 @@ export const GameCard: React.FC<GameCardProps> = ({
     >
       <div className="relative aspect-[3/4] w-full overflow-hidden bg-muted">
         <img
-          src={game.cover_url}
+          src={coverSrc}
           alt={game.name}
           className="h-full w-full object-cover transition-all duration-700 ease-out group-hover:scale-110"
           loading="lazy"
+          decoding="async"
+          // 3. Final Safety Net: If local file fails (moved/deleted), revert to web URL
+          onError={(e) => {
+             const target = e.target as HTMLImageElement;
+             if (game.cover_url && target.src !== game.cover_url) {
+                 target.src = game.cover_url; 
+             }
+          }}
         />
         
         {/* ⚡ High-Visibility Refractive Layer (Museum Mode) */}

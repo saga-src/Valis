@@ -1,3 +1,4 @@
+
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
@@ -76,6 +77,8 @@ contextBridge.exposeInMainWorld('api', {
   fetchIGDBGame: (id) => ipcRenderer.invoke('igdb:get-by-id', id),
   
   proxyImage: (url) => ipcRenderer.invoke('app:proxy-image', url),
+  cacheLibraryImages: (games) => ipcRenderer.invoke('image:cache-library', games),
+  getImagePath: (url, gameId) => ipcRenderer.invoke('image:get-path', { url, gameId }),
   
   // System Metadata
   getSystemMeta: () => ipcRenderer.invoke('system:get-meta'),

@@ -1,3 +1,4 @@
+
 export interface StorageApi {
   saveGame: (game: any) => Promise<any>;
   addGame: (game: any) => Promise<any>;
@@ -23,6 +24,8 @@ export interface StorageApi {
   searchGame: (query: string) => Promise<any[]>; // Singular
   fetchIGDBGame: (id: string) => Promise<any>; // Fetch Single Game Metadata
   proxyImage: (url: string) => Promise<string | null>;
+  cacheLibraryImages: (games: any[]) => Promise<{ queued: boolean }>;
+  getImagePath: (url: string, gameId: string) => Promise<string | null>;
   importSessionsExcel: () => Promise<{ success: boolean; count?: number; gamesCount?: number; message?: string }>;
   exportSessionsExcel: () => Promise<{ success: boolean; message?: string }>;
   selectExecutable: () => Promise<string | null>;
@@ -76,7 +79,7 @@ export interface StorageApi {
   testIgdbConnection: (clientId: string, clientSecret: string) => Promise<{ success: boolean; error?: string }>;
 
   // Linked Accounts
-  getLinkedAccounts: (platform?: string) => Promise<Array<{ id: number; platform: string; external_id: string; username: string; avatar_url: string; created_at: number }>>;
+  getLinkedAccounts: (platform?: string) => Promise<Array<{ id: number; platform: string; external_id: string; username: string; avatar_url: string; created: number }>>;
   unlinkAccount: (id: number) => Promise<{ success: boolean }>;
 
   // Auth

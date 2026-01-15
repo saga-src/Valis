@@ -1,7 +1,7 @@
 {
   "name": "valis",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.0.6",
   "type": "module",
   "main": "dist-electron/main/main.js",
   "scripts": {
@@ -42,14 +42,14 @@
     "react-dom": "^19.2.1",
     "react-grid-layout": "^2.1.1",
     "react-router-dom": "^6.28.0",
+    "react-virtuoso": "^4.12.0",
     "recharts": "^3.6.0",
     "systeminformation": "^5.27.14",
     "tailwind-merge": "^3.4.0",
     "wa-sqlite": "^1.0.0",
     "wait-on": "^7.2.0",
     "xlsx": "^0.18.5",
-    "zustand": "^5.0.0",
-    "react-virtuoso": "^4.12.3"
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.2",
@@ -83,6 +83,13 @@
       "dist-electron/**/*",
       "package.json",
       ".env.local"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/bin",
+        "to": "bin",
+        "filter": ["**/*"]
+      }
     ],
     "asar": true,
     "nsis": {

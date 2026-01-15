@@ -1,4 +1,3 @@
-
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -20,7 +19,6 @@ export default defineConfig(({ mode }) => {
         react(),
         electron({
           main: {
-            // 1️⃣ Fix: Build BOTH main.js and ProxyServer.js
             entry: {
               main: 'electron/main.js',
               ProxyServer: 'electron/services/ProxyServer.js', 
@@ -29,7 +27,7 @@ export default defineConfig(({ mode }) => {
                 build: {
                     outDir: 'dist-electron/main', 
                     rollupOptions: {
-                        external: ['better-sqlite3', 'ps-list']
+                        external: ['better-sqlite3']
                     }
                 }
             }
@@ -41,8 +39,7 @@ export default defineConfig(({ mode }) => {
                     outDir: 'dist-electron/preload',
                     rollupOptions: {
                         output: {
-                            // 2️⃣ Fix: Force it to be 'index.js' (CJS) so main.js can find it
-                            entryFileNames: 'index.js',
+                            entryFileNames: 'index.cjs',
                             format: 'cjs'
                         }
                     }
@@ -51,7 +48,6 @@ export default defineConfig(({ mode }) => {
           },
         }),
       ],
-      // ... keep your existing server/define/resolve config below ...
       server: {
         port: 3000,
         host: '0.0.0.0',
@@ -70,12 +66,12 @@ export default defineConfig(({ mode }) => {
       },
       resolve: {
         alias: {
-          '@': path.resolve(__dirname, './src'),
-          '@app': path.resolve(__dirname, './src/app'),
-          '@lib': path.resolve(__dirname, './src/lib'),
-          '@features': path.resolve(__dirname, './src/features'),
-          '@shared': path.resolve(__dirname, './src/shared'),
-          '@assets': path.resolve(__dirname, './src/assets')
+          '@': path.resolve(__dirname, '.'),
+          '@app': path.resolve(__dirname, './app'),
+          '@lib': path.resolve(__dirname, './lib'),
+          '@features': path.resolve(__dirname, './features'),
+          '@shared': path.resolve(__dirname, './shared'),
+          '@assets': path.resolve(__dirname, './assets')
         }
       },
       build: {
