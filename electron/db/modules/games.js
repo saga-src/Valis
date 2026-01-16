@@ -175,7 +175,7 @@ export async function addGame(game) {
   const library = getLibraryFields(merged);
   
   // Set executable_path in library fields
-  if (game.executable) {
+  if (game.executable !== undefined) {
       library.executable_path = game.executable;
   }
 

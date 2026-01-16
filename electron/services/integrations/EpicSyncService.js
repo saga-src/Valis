@@ -1,4 +1,3 @@
-
 import { BrowserWindow } from 'electron';
 import epicClient from './EpicClient.js';
 import { addGame, getLibrary, getGameById } from '../../db/modules/games.js';
@@ -39,7 +38,6 @@ export async function syncEpicLibrary(sender) {
 
   // 1. Get the Linked Account ID
   const accounts = await getLinkedAccounts('epic');
-  // Use the most recent account
   const accountId = accounts.length > 0 ? accounts[accounts.length - 1].external_id : null;
 
   if (!accountId) {
@@ -48,8 +46,8 @@ export async function syncEpicLibrary(sender) {
 
   let scrapedGames = [];
   try {
-      // 2. Call the Client to scrape
-      scrapedGames = await epicClient.fetchLibrary(window, accountId);
+      // 2. Call the Client to scrape with progress sender
+      scrapedGames = await epicClient.fetchLibrary(window, accountId, sender);
   } catch (e) {
       console.error('[EpicSync] Client error:', e);
       return { success: false, error: 'Scraping process failed.' };
@@ -60,8 +58,6 @@ export async function syncEpicLibrary(sender) {
   }
 
   const totalGames = scrapedGames.length;
-  sender.send('steam:sync-progress', { message: `Found ${totalGames} games. Importing...`, current: 0, total: totalGames });
-
   let totalAdded = 0;
   let totalSyncedAchievements = 0;
 
@@ -70,10 +66,13 @@ export async function syncEpicLibrary(sender) {
       const cleanTitle = sanitizeTitle(item.title);
       const epicSlug = item.id;
       
+      // Update DB Progress (90% -> 100%)
+      const dbPercent = 90 + Math.round((i / totalGames) * 10);
       sender.send('steam:sync-progress', { 
-          message: `Processing: ${cleanTitle}`, 
+          message: `Importing to Vault: ${cleanTitle}`, 
           current: i + 1, 
-          total: totalGames 
+          total: totalGames,
+          percent: dbPercent
       });
 
       // 1. Resolve IGDB ID First
@@ -98,11 +97,10 @@ export async function syncEpicLibrary(sender) {
 
       // 3. Calculate Smart Playtime
       let legacyEntries = [];
-      const epicSeconds = (item.playtime_forever || 0) * 60; // Assuming playtime_forever is in minutes if available
+      const epicSeconds = (item.playtime_forever || 0) * 60;
 
       if (existingGame) {
         legacyEntries = existingGame.legacy_playtime_seconds || [];
-        // Check if we already counted Epic for this specific game (Strict Source Match)
         const hasEpicSource = legacyEntries.some(e => 
           e.source?.toLowerCase().trim() === 'epic'
         );
@@ -151,7 +149,6 @@ export async function syncEpicLibrary(sender) {
           }
           totalAdded++;
       } else {
-          // Update existing game with potential new playtime aggregation and link epic_id
           await addGame({
             ...existingGame,
             legacy_playtime_seconds: legacyEntries,
@@ -173,5 +170,6 @@ export async function syncEpicLibrary(sender) {
       await new Promise(r => setTimeout(r, 400));
   }
 
+  sender.send('steam:sync-progress', { message: 'Sync Complete!', percent: 100 });
   return { success: true, added: totalAdded, synced: totalSyncedAchievements };
 }

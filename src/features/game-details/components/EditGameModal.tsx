@@ -341,12 +341,15 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
 
   const handleSave = async () => {
     // 1. Prepare Updated Data
+    // 🟢 FIX: Explicitly handle removal. If 'executable' is empty, send NULL.
+    const finalExecutable = (executable && executable.trim().length > 0) ? executable : null;
+
     const updated = {
       ...game,
       title,
       status,
       skip_achievement_scan: true, // Signal backend to skip automated achievement scans for this update
-      executable: executable || null,
+      executable: finalExecutable,
       legacy_playtime_seconds: legacyEntries, // ⚡ Save Array
       platform_ownership: ownedPlatforms.map(p => ({
           id: p.id,            // This is the platform_id (e.g. 48)
@@ -538,7 +541,21 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
               placeholder="No executable linked"
               className="flex-1 bg-muted/20 border border-border rounded-lg p-2.5 text-xs text-muted-foreground cursor-not-allowed outline-none font-mono"
             />
+            
+            {/* 🟢 NEW: Clear Button (Only shows if executable exists) */}
+            {executable && (
+                <button 
+                  type="button"
+                  onClick={() => setExecutable('')}
+                  className="px-3 bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/20 rounded-lg transition-colors flex items-center justify-center"
+                  title="Clear / Unlink Executable"
+                >
+                  <Trash2 size={16} />
+                </button>
+            )}
+
             <button 
+              type="button"
               onClick={handleLinkExecutable}
               className="px-4 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors flex items-center gap-2 border border-border/50"
               title="Select .exe file"

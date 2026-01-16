@@ -1,18 +1,26 @@
-
 import { BrowserWindow } from 'electron';
 
 class EpicClient {
     
-    async fetchLibrary(mainWindow, accountId) {
-        console.log(`[EpicClient] Starting Harvest (English-Only) for: ${accountId}`);
+    /**
+     * Harvests library data from Epic Games public profile with real-time progress reporting.
+     * @param {BrowserWindow} mainWindow Parent window for modal behavior
+     * @param {string} accountId The Epic Account ID
+     * @param {WebContents} sender IPC sender to transmit progress events
+     */
+    async fetchLibrary(mainWindow, accountId, sender) {
+        console.log(`[EpicClient] Starting Harvest for: ${accountId}`);
         
+        // Report initial status
+        if (sender) sender.send('steam:sync-progress', { message: 'Connecting to Epic Games...', percent: 5 });
+
         // Force English URL
         const targetUrl = `https://store.epicgames.com/en-US/u/${accountId}`;
         
         const syncWindow = new BrowserWindow({
             width: 1600,
             height: 1000,
-            show: false, // Set to true if you want to verify visually
+            show: false, // Keep hidden in production
             parent: mainWindow,
             webPreferences: {
                 nodeIntegration: false,
@@ -21,23 +29,24 @@ class EpicClient {
             }
         });
 
-        console.log('[EpicClient] Loading English Profile:', targetUrl);
         syncWindow.loadURL(targetUrl);
-
         const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
         return new Promise(async (resolve, reject) => {
+            // 15 minute timeout
             const globalTimeout = setTimeout(() => {
                 if (!syncWindow.isDestroyed()) syncWindow.close();
                 resolve([]); 
-            }, 900000); // 15 min timeout
+            }, 900000); 
 
             try {
-                // --- STEP 1: LOAD & SCROLL ---
-                console.log('[EpicClient] Waiting for render...');
+                // --- STEP 1: LOAD ---
+                if (sender) sender.send('steam:sync-progress', { message: 'Loading Profile (Please wait)...', percent: 10 });
                 await wait(8000);
                 
-                // Force scroll to load all games (Lazy Loading)
+                // --- STEP 2: SCROLL ---
+                if (sender) sender.send('steam:sync-progress', { message: 'Scrolling to find all games...', percent: 15 });
+                
                 await syncWindow.webContents.executeJavaScript(`
                     new Promise(resolve => {
                         let totalHeight = 0;
@@ -46,7 +55,8 @@ class EpicClient {
                             const scrollHeight = document.body.scrollHeight;
                             window.scrollBy(0, distance);
                             totalHeight += distance;
-                            if(totalHeight >= scrollHeight){
+                            // Stop if bottom reached or sanity limit
+                            if(totalHeight >= scrollHeight || totalHeight > 50000){
                                 clearInterval(timer);
                                 resolve();
                             }
@@ -55,14 +65,15 @@ class EpicClient {
                 `);
                 await wait(3000);
 
-                // --- STEP 2: HARVEST URLS (FIXED SELECTOR) ---
+                // --- STEP 3: EXTRACT LINKS ---
+                if (sender) sender.send('steam:sync-progress', { message: 'Extracting Game Links...', percent: 25 });
+                
                 const gameLinks = await syncWindow.webContents.executeJavaScript(`
                     (() => {
                         try {
                             const all = Array.from(document.querySelectorAll('*'));
                             
-                            // FIX: Broader keyword search based on your English screenshot
-                            // Looking for "Total XP Earned" or "Achievement Progress"
+                            // Look for achievement-related keywords in elements
                             const targets = all.filter(el => 
                                 el.children.length === 0 && el.innerText && (
                                     el.innerText.includes('Total XP Earned') || 
@@ -78,7 +89,7 @@ class EpicClient {
                                 let parent = t.parentElement;
                                 let rawUrl = null;
                                 
-                                // Traverse up to find Link (<a>)
+                                // Traverse up to find link
                                 for(let k=0; k<15; k++) {
                                     if(!parent) break;
                                     if(parent.tagName === 'A' && parent.href) { rawUrl = parent.href; break; }
@@ -88,25 +99,21 @@ class EpicClient {
                                 if(rawUrl) {
                                     try {
                                         const u = new URL(rawUrl);
-                                        // Force path to /en-US/
-                                        const path = u.pathname.split('/');
-                                        if(path[1] && /^[a-z]{2}-[A-Z]{2}$/.test(path[1])) {
-                                            path[1] = 'en-US';
+                                        const pathSegments = u.pathname.split('/');
+                                        // Ensure en-US locale for consistent scraping
+                                        if(pathSegments[1] && /^[a-z]{2}-[A-Z]{2}$/.test(pathSegments[1])) {
+                                            pathSegments[1] = 'en-US';
                                         } else {
-                                            path.splice(1, 0, 'en-US');
+                                            pathSegments.splice(1, 0, 'en-US');
                                         }
-                                        u.pathname = path.join('/');
-                                        
+                                        u.pathname = pathSegments.join('/');
                                         const finalUrl = u.href;
 
-                                        // Filter out the "My Profile" link itself
+                                        // Filter out own profile link
                                         if (!seen.has(finalUrl) && !finalUrl.endsWith('/u/' + '${accountId}')) {
                                             seen.add(finalUrl);
-                                            
-                                            // Fallback title extraction from URL
                                             const slug = finalUrl.split('/').pop();
                                             const niceTitle = slug.replace(/-/g, ' ').replace(/\\b\\w/g, l => l.toUpperCase());
-
                                             games.push({ url: finalUrl, title: niceTitle });
                                         }
                                     } catch (err) {}
@@ -118,28 +125,36 @@ class EpicClient {
                 `);
 
                 if (gameLinks.error) throw new Error(gameLinks.error);
-                console.log(`[EpicClient] Found ${gameLinks.length} games.`);
+                
+                const totalGames = gameLinks.length;
+                if (sender) sender.send('steam:sync-progress', { message: `Found ${totalGames} games. Starting individual scans...`, percent: 30 });
+                
                 const finalLibrary = [];
+                let processed = 0;
 
-                // --- STEP 3: VISIT & SCRAPE (STRICT ENGLISH) ---
+                // --- STEP 4: VISIT EACH GAME ---
                 for (const game of gameLinks) {
-                    console.log(`[EpicClient] Scanning: ${game.title}`);
+                    if (syncWindow.isDestroyed()) break;
+                    
+                    processed++;
+                    const percent = 30 + Math.round((processed / totalGames) * 60); // Scale from 30% to 90%
+                    
+                    if (sender) {
+                        sender.send('steam:sync-progress', { 
+                            message: `Scanning: ${game.title} (${processed}/${totalGames})`, 
+                            percent: percent 
+                        });
+                    }
+
                     await syncWindow.loadURL(game.url);
-                    await wait(5000); 
+                    await wait(4000); // Wait for dynamic content to load
 
                     const gameData = await syncWindow.webContents.executeJavaScript(`
                         (() => {
-                            // BLOCKLIST
-                            const BLOCKLIST = [
-                                "Discover", "Browse", "News", "Wishlist", "Cart", 
-                                "Achievements", "Friends", "Filter", "Sort by", 
-                                "Progress", "Backlog", "Platinum"
-                            ];
-
+                            const BLOCKLIST = ["Discover", "Browse", "News", "Wishlist", "Cart", "Achievements", "Friends", "Filter", "Sort by", "Progress", "Backlog", "Platinum"];
                             const h1 = document.querySelector('h1');
                             const title = h1 ? h1.innerText : "${game.title}";
                             
-                            // Find all "XP" badges (Universal identifier)
                             const allDivs = Array.from(document.querySelectorAll('div'));
                             const xpBadges = allDivs.filter(d => /\\d+\\s*XP/i.test(d.innerText));
 
@@ -153,14 +168,10 @@ class EpicClient {
                                 if(row) {
                                     const text = row.innerText;
                                     const lines = text.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
-                                    
-                                    // Robust English Date Match
-                                    // Matches "Unlocked Apr 20, 2023" or "Unlocked 20 Apr"
                                     const dateLine = lines.find(l => l.match(/^Unlocked\\s+/i));
 
                                     if(dateLine) {
                                         const name = lines[0]; 
-                                        
                                         if(name && !seen.has(name) && !BLOCKLIST.includes(name)) {
                                             seen.add(name);
                                             unlockedList.push({
@@ -183,14 +194,14 @@ class EpicClient {
                     `);
 
                     if (gameData.id) {
-                        console.log(`   -> Found ${gameData.achievementCount} unlocked achievements for ${gameData.title}.`);
                         finalLibrary.push(gameData);
                     }
                 }
 
-                console.log('[EpicClient] Sync Complete.');
+                if (sender) sender.send('steam:sync-progress', { message: 'Finalizing Library...', percent: 95 });
+                
                 clearTimeout(globalTimeout);
-                syncWindow.close();
+                if (!syncWindow.isDestroyed()) syncWindow.close();
                 resolve(finalLibrary);
 
             } catch (err) {

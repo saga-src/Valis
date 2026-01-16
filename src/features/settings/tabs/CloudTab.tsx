@@ -6,6 +6,7 @@ import { useAutoSync } from '../hooks/useAutoSync';
 import { LogoutModal } from '../../../components/ui/LogoutModal';
 import { AuthWidget } from '../../auth/components/AuthWidget';
 import { supabase } from '../../../lib/cloud/supabase';
+import { PROGRESSION_TREE } from '../../gamification/logic/milestones';
 
 export const CloudTab = () => {
   const { user, profile, signOut, loading } = useAuth();
@@ -58,16 +59,51 @@ export const CloudTab = () => {
     try {
       setIsSyncing(true);
 
-      // 1. Calculate Stats Locally (using the robust backend aggregation)
-      const syncData = await window.api.getSyncStats();
+      // 1. Get raw database dump for detailed calculations
+      const { data: dbDump } = await window.api.getDatabaseDump();
+      if (!dbDump) throw new Error("Could not retrieve local database dump.");
 
+      // 2. Build XP Lookup Map for Milestones
+      const tierXpMap: Record<string, number> = {};
+      PROGRESSION_TREE.forEach(archetype => {
+        archetype.disciplines.forEach(discipline => {
+          discipline.tiers.forEach(tier => {
+            // IDs in unlocked_tiers are stored as `${discipline_id}_${tier_level}`
+            tierXpMap[`${discipline.id}_${tier.level}`] = tier.xp;
+          });
+        });
+      });
+
+      // 3. Calculate Session XP (0.2 per minute, ignore legacy)
+      const totalSessionSeconds = (dbDump.sessions || []).reduce(
+        (acc: number, s: any) => acc + (s.duration_seconds || 0), 0
+      );
+      const sessionXP = Math.floor((totalSessionSeconds / 60) * 0.2);
+
+      // 4. Calculate Rank XP from unlocked_tiers
+      let rankXP = 0;
+      (dbDump.unlocked_tiers || []).forEach((t: any) => {
+        rankXP += (tierXpMap[t.id] || 0);
+      });
+
+      // 5. Calculate Status XP
+      let statusXP = 0;
+      (dbDump.library || []).forEach((g: any) => {
+        if (g.status === 'Beat') statusXP += 250;
+        else if (g.status === 'Completed') statusXP += 1000;
+      });
+
+      const totalXP = sessionXP + rankXP + statusXP;
+
+      // 6. Get Existing Sync Stats for leaderboard categories
+      const syncData = await window.api.getSyncStats();
       if (!syncData || !syncData.stats) {
-        throw new Error("Failed to calculate local stats.");
+        throw new Error("Failed to calculate sync stats.");
       }
 
       const { stats, leaderboard_entries } = syncData;
 
-      // 2. Upload to 'player_stats' Table
+      // 7. Upload to 'player_stats' Table
       const { error: profileError } = await supabase
         .from('player_stats')
         .upsert({
@@ -76,17 +112,18 @@ export const CloudTab = () => {
           games_owned: stats.collection_count,
           games_beaten: stats.campaigns_beat,
           total_platinum: stats.perfect_games,
+          current_xp: totalXP, // Synchronized calculated XP
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id' });
 
       if (profileError) throw profileError;
 
-      // 3. Upload to 'leaderboards' Table
+      // 8. Upload to 'leaderboards' Table
       if (leaderboard_entries && leaderboard_entries.length > 0) {
         const leaderboardRows = leaderboard_entries.map((entry: any) => ({
           user_id: user.id,
           category: entry.category,
-          sub_category: entry.sub_category || 'global', // ✅ FIX: Dynamic sub-category
+          sub_category: entry.sub_category || 'global',
           period_type: entry.period_type,
           period_key: entry.period_key,
           score: entry.score,

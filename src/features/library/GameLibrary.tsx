@@ -349,7 +349,7 @@ export const GameLibrary: React.FC = () => {
                                             : "hover:bg-muted hover:text-foreground"
                                     )}
                                 >
-                                    {status === 'Shelved' ? 'Endless' : status}
+                                    {status}
                                 </button>
                             );
                         })}

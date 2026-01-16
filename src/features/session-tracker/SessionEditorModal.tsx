@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Modal from '../../components/ui/Modal';
 import { Clock, Calendar, Save, Tag, BookOpen, Gamepad2, Smile, ArrowRight, RefreshCw, X, Trash2 } from 'lucide-react';
@@ -281,19 +280,12 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
                 platformName = CUSTOM_PLATFORM_DATA[platformId as number].name;
             }
 
-            // Calculate XP for feed
-            const xp = Math.floor(durationSeconds / 3600) * 10;
-
-            // Metadata for Activity Feed
-            const activityData = {
-                game: targetGame.title || targetGame.name,
-                duration: durationSeconds,
-                cover_url: targetGame.cover_url || targetGame.cover?.url || '',
-                game_id: targetGame.igdb_id || targetGame.id,
-                platform: platformName,
-                notes: tags,
-                xp: xp,
-                mood: mood
+            // Calculate XP based on new formula: 0.2 XP per minute (12 XP per hour)
+            const calculateXp = (secs: number) => {
+                const base = Math.floor((secs / 60) * 0.2);
+                // Apply 5-minute floor for new sessions
+                if (base === 0 && secs > 300) return 1;
+                return base;
             };
 
             const tasks: Promise<any>[] = [];
@@ -304,8 +296,9 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
                 const deltaSeconds = durationSeconds - oldSeconds;
 
                 if (deltaSeconds !== 0) {
-                    const oldXP = Math.floor(oldSeconds / 3600) * 10;
-                    const newXP = Math.floor(durationSeconds / 3600) * 10;
+                    // Note: In Edit Mode we don't apply the 5min floor to the individual values to keep deltas precise
+                    const oldXP = Math.floor((oldSeconds / 60) * 0.2);
+                    const newXP = Math.floor((durationSeconds / 60) * 0.2);
                     const deltaXP = newXP - oldXP;
 
                     // A. Update Stats
@@ -334,7 +327,16 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
                     supabase.from('activities')
                         .update({ 
                             happened_at: happenedAt, 
-                            data: activityData
+                            data: {
+                                game: targetGame.title || targetGame.name,
+                                duration: durationSeconds,
+                                cover_url: targetGame.cover_url || targetGame.cover?.url || '',
+                                game_id: targetGame.igdb_id || targetGame.id,
+                                platform: platformName,
+                                notes: tags,
+                                xp: calculateXp(durationSeconds),
+                                mood: mood
+                            }
                         })
                         .eq('user_id', user.id)
                         .eq('game_id', targetGame.id)
@@ -345,7 +347,7 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
 
             } else {
                 // --- ADD MODE ---
-                const xp = Math.floor(durationSeconds / 3600) * 10;
+                const xp = calculateXp(durationSeconds);
                 
                 // A. Update Stats
                 tasks.push(
@@ -372,7 +374,16 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
                     game_id: targetGame.id,
                     type: 'session',
                     happened_at: happenedAt,
-                    data: activityData
+                    data: {
+                        game: targetGame.title || targetGame.name,
+                        duration: durationSeconds,
+                        cover_url: targetGame.cover_url || targetGame.cover?.url || '',
+                        game_id: targetGame.igdb_id || targetGame.id,
+                        platform: platformName,
+                        notes: tags,
+                        xp: xp,
+                        mood: mood
+                    }
                 };
                 tasks.push(
                     supabase.from('activities').insert(activityPayload)
@@ -410,7 +421,8 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
 
               if (targetGame) {
                   const seconds = initialData.durationSeconds || 0;
-                  const xpToRemove = -Math.floor(seconds / 3600) * 10;
+                  // XP calculation with new formula for removal
+                  const xpToRemove = -Math.floor((seconds / 60) * 0.2);
                   const negSeconds = -seconds;
 
                   const getGenres = () => {

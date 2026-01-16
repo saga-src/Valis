@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useSessionStore } from './store';
 import { System } from '../../lib/api';
@@ -80,8 +79,11 @@ export const useSessionManager = () => {
     // 3. Background Network Operations (Fire-and-Forget)
     void (async () => {
         // --- A. Local XP Calculation ---
-        let xpEarned = Math.floor(durationSeconds / 3600) * 10;
-        if (xpEarned === 0 && durationMinutes > 10) {
+        // New Formula: 0.2 XP per minute (12 XP per hour)
+        let xpEarned = Math.floor((durationSeconds / 60) * 0.2);
+        
+        // Floor logic: If session is over 5 minutes but results in 0 XP, grant 1 XP.
+        if (xpEarned === 0 && durationMinutes > 5) {
             xpEarned = 1;
         }
 
