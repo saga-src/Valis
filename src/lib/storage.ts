@@ -46,6 +46,10 @@ export interface StorageApi {
   // Startup
   getStartupStatus: () => Promise<boolean>;
   toggleStartup: (enabled: boolean) => Promise<boolean>;
+
+  // Safe Exit Handshake
+  onAppClosing: (callback: () => void) => () => void;
+  sendReadyToQuit: () => void;
 }
 
 export const saveGame = async (game: any) => {
@@ -234,4 +238,15 @@ export const getStartupStatus = async () => {
 export const toggleStartup = async (enabled: boolean) => {
   if (!window.api) return false;
   return await window.api.toggleStartup(enabled);
+};
+
+// Safe Exit Handshake
+export const onAppClosing = (callback: () => void) => {
+  if (!window.api) return () => {};
+  return window.api.onAppClosing(callback);
+};
+
+export const sendReadyToQuit = () => {
+  if (!window.api) return;
+  window.api.sendReadyToQuit();
 };

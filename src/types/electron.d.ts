@@ -123,6 +123,10 @@ export interface StorageApi {
   setSystemMeta: (key: string, value: string) => Promise<{ success: boolean }>;
   restoreBackup: (data: any) => Promise<{ success: boolean; error?: string }>;
   getDatabaseDump: () => Promise<{ data: any }>;
+
+  // Safe Exit Handshake
+  onAppClosing: (callback: () => void) => () => void;
+  sendReadyToQuit: () => void;
 }
 
 declare global {

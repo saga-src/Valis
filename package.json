@@ -1,7 +1,7 @@
 {
   "name": "valis",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "type": "module",
   "main": "dist-electron/main/main.js",
   "scripts": {
@@ -89,6 +89,11 @@
         "from": "resources/bin",
         "to": "bin",
         "filter": ["**/*"]
+      },
+      {
+        "from": "build",
+        "to": "build",
+        "filter": ["logo.ico"] 
       }
     ],
     "asar": true,

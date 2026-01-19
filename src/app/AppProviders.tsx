@@ -50,7 +50,7 @@ const AppBackgroundServices: React.FC = () => {
 
   // Cloud Sync Automation
   const { user } = useAuth();
-  const { checkSyncOnLoad } = useAutoSync();
+  const { checkSyncOnLoad, performCloudUpload } = useAutoSync();
 
   useEffect(() => {
     if (user) {
@@ -71,6 +71,31 @@ const AppBackgroundServices: React.FC = () => {
         return () => removeListener();
     }
   }, []);
+
+  // --- SAFE EXIT HANDSHAKE ---
+  useEffect(() => {
+    if (window.api?.onAppClosing) {
+      const remove = window.api.onAppClosing(async () => {
+        console.log('[SafeExit] Received close signal from Main. Starting sync...');
+        
+        if (user) {
+          try {
+            // Use the performCloudUpload from useAutoSync to push latest local DB to Supabase
+            await performCloudUpload();
+            console.log('[SafeExit] Final cloud upload successful.');
+          } catch (e) {
+            console.error('[SafeExit] Final cloud upload failed:', e);
+          }
+        } else {
+            console.log('[SafeExit] No user logged in, skipping cloud sync.');
+        }
+
+        // Inform the main process we are done
+        window.api.sendReadyToQuit();
+      });
+      return remove;
+    }
+  }, [user, performCloudUpload]);
 
   return (
     <>

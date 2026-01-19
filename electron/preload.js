@@ -1,4 +1,3 @@
-
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
@@ -168,6 +167,14 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('watcher:session-ended', subscription);
     return () => ipcRenderer.removeListener('watcher:session-ended', subscription);
   },
+
+  // Safe Exit Handshake
+  onAppClosing: (callback) => {
+    const subscription = () => callback();
+    ipcRenderer.on('app-closing-signal', subscription);
+    return () => ipcRenderer.removeListener('app-closing-signal', subscription);
+  },
+  sendReadyToQuit: () => ipcRenderer.send('renderer-ready-to-quit'),
 
   // Audio / FX
   onPlaySound: (callback) => {
