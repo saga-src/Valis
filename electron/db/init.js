@@ -1,6 +1,8 @@
 
 import { db, rawDb } from './client.js';
 
+export { db, rawDb };
+
 export async function initDB() {
   console.log('[DB] Initializing Normalized Schema...');
 

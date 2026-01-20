@@ -1,3 +1,4 @@
+
 export interface StorageApi {
   saveGame: (game: any) => Promise<any>;
   addGame: (game: any) => Promise<any>;
@@ -50,6 +51,7 @@ export interface StorageApi {
   // Safe Exit Handshake
   onAppClosing: (callback: () => void) => () => void;
   sendReadyToQuit: () => void;
+  getDatabaseFile: () => Promise<Uint8Array>;
 }
 
 export const saveGame = async (game: any) => {
@@ -249,4 +251,9 @@ export const onAppClosing = (callback: () => void) => {
 export const sendReadyToQuit = () => {
   if (!window.api) return;
   window.api.sendReadyToQuit();
+};
+
+export const getDatabaseFile = async () => {
+    if (!window.api) return new Uint8Array();
+    return await window.api.getDatabaseFile();
 };

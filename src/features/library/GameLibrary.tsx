@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from '../../app/index';
 import { 
     Search, SortAsc, SortDesc, SlidersHorizontal, LayoutGrid, List, Table,
-    Dices, Sun, Moon, EyeOff, LayoutTemplate, Clock, Star, Layers
+    Dices, Sun, Moon, EyeOff, LayoutTemplate, Clock, Star, Layers, RefreshCw
 } from 'lucide-react';
 import { useLibraryFilters } from './hooks/useLibraryFilters';
 import { useTheme } from '../../lib/theme';
@@ -13,22 +13,91 @@ import { GameListRow } from './components/GameListRow';
 import { DataRow } from './components/DataRow';
 import { cn } from '../../lib/utils/cn';
 
+// Virtualization
+import { VirtuosoGrid } from 'react-virtuoso';
+
 // Modular Hooks and Utils
 import { useLibraryData } from './hooks/useLibraryData';
 import { useLibrarySort } from './hooks/useLibrarySort';
 import { STORE_NAMES, getStatusColorVar } from './utils/libraryUtils';
 import { useMarkObserver } from '../gamification/hooks/useMarkObserver';
+import { useLibraryStore } from '../../store/libraryStore';
+import { useToast } from '../../context/ToastContext';
+
+// --- VIRTUALIZATION CONTAINERS ---
+
+const ListContainer = React.forwardRef<HTMLDivElement, any>(({ style, children, ...props }, ref) => (
+  <div
+    {...props}
+    ref={ref}
+    style={{
+      ...style,
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '13px',
+      justifyContent: 'center',
+      paddingBottom: '100px', // Extra space for the footer
+    }}
+  >
+    {children}
+  </div>
+));
+
+const ItemContainer = React.forwardRef<HTMLDivElement, any>(({ children, ...props }, ref) => (
+  <div
+    {...props}
+    ref={ref}
+    style={{
+      display: 'flex',
+      justifyContent: 'center',
+      width: '180px',
+      height: '300px',
+      padding: '5px'
+    }}
+  >
+    {children}
+  </div>
+));
+
+ListContainer.displayName = 'ListContainer';
+ItemContainer.displayName = 'ItemContainer';
+
+// --- SKELETON COMPONENTS ---
+
+const SkeletonCard = () => (
+  <div className="w-[180px] h-[300px] p-[5px] shrink-0">
+    <div 
+      className="w-full h-full rounded-[8px] border border-border/5" 
+      style={{
+        background: 'linear-gradient(90deg, #18181b 0%, #27272a 50%, #18181b 100%)',
+        backgroundSize: '200% 100%',
+        animation: 'shimmer 1.5s infinite linear'
+      }}
+    />
+  </div>
+);
+
+const SkeletonGrid = ({ className }: { className?: string }) => (
+  <div className={cn("flex flex-wrap gap-[13px] justify-center w-full h-full overflow-hidden pt-2", className)}>
+    {Array.from({ length: 20 }).map((_, i) => (
+      <SkeletonCard key={i} />
+    ))}
+  </div>
+);
 
 export const GameLibrary: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [showViewOptions, setShowViewOptions] = useState(false);
   const [filterStore, setFilterStore] = useState('All');
+  const [isLayoutReady, setIsLayoutReady] = useState(false);
   
   const navigate = useNavigate();
   const { theme, changeTheme } = useTheme();
   const { libraryAction } = useSettings();
   const { settings, updateSettings } = useLibrarySettings();
   const { reportSignal } = useMarkObserver();
+  const { invalidateCache } = useLibraryStore();
+  const { toast } = useToast();
 
   // 1. Data Hook
   const { 
@@ -50,6 +119,36 @@ export const GameLibrary: React.FC = () => {
     filterPlatform, setFilterPlatform,
     filterTheme, setFilterTheme
   } = useLibraryFilters(games, settings.showDlc);
+
+  // 3. Store Sub-filtering
+  const processedGames = useMemo(() => {
+    if (filterStore === 'All') return filteredGames;
+    return filteredGames.filter(game => {
+      let ids: number[] = [];
+      try { 
+        ids = typeof game.owned_platform_ids === 'string' 
+          ? JSON.parse(game.owned_platform_ids) 
+          : game.owned_platform_ids || []; 
+      } catch {}
+      return ids.some(id => STORE_NAMES[Number(id)] === filterStore);
+    });
+  }, [filteredGames, filterStore]);
+
+  // 4. Sorting Hook
+  const displayedGames = useLibrarySort(processedGames, settings, lastPlayedMap);
+
+  // --- LAYOUT READY DELAY ---
+  // Fixes the "pile-up" glitch by letting Virtuoso calculate layout invisibly first
+  useEffect(() => {
+    if (!loading && displayedGames.length > 0) {
+      const timer = setTimeout(() => {
+        setIsLayoutReady(true);
+      }, 75);
+      return () => clearTimeout(timer);
+    } else {
+      setIsLayoutReady(false);
+    }
+  }, [loading, displayedGames.length, settings.viewMode]);
 
   // Monitor Filters for Marks
   useEffect(() => {
@@ -75,24 +174,6 @@ export const GameLibrary: React.FC = () => {
     }
     return () => clearInterval(interval);
   }, [settings.viewMode, reportSignal]);
-
-
-  // 3. Store Sub-filtering
-  const processedGames = useMemo(() => {
-    if (filterStore === 'All') return filteredGames;
-    return filteredGames.filter(game => {
-      let ids: number[] = [];
-      try { 
-        ids = typeof game.owned_platform_ids === 'string' 
-          ? JSON.parse(game.owned_platform_ids) 
-          : game.owned_platform_ids || []; 
-      } catch {}
-      return ids.some(id => STORE_NAMES[Number(id)] === filterStore);
-    });
-  }, [filteredGames, filterStore]);
-
-  // 4. Sorting Hook
-  const displayedGames = useLibrarySort(processedGames, settings, lastPlayedMap);
 
   const statuses = ['All', 'Backlog', 'Playing', 'Beat', 'Completed', 'Dropped', 'Shelved', 'Endless'];
   const sortOptions: { value: SortOption; label: string }[] = [
@@ -139,27 +220,52 @@ export const GameLibrary: React.FC = () => {
       reportSignal('VIEW_MODE_UPDATE', mode);
   };
 
+  const handleManualRefresh = () => {
+      invalidateCache();
+      toast.info("Invalidating cache and re-syncing vault...");
+  };
+
   const renderContent = () => {
     if (settings.viewMode === 'grid') {
         return (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-6">
-              {displayedGames.map((game, index) => (
-                <div key={game.id} className={cn("game-card", index === 0 && "first-game-card")}>
-                  <GameCard 
-                      game={game} 
-                      settings={settings} 
-                      libraryAction={libraryAction}
-                      theme={theme}
-                  />
+            <div className="relative w-full h-full overflow-hidden">
+              {/* Top Layer: Skeleton (Visible during load and layout calculation) */}
+              {(!isLayoutReady || loading) && (
+                <div className="absolute inset-0 z-10 bg-background transition-opacity duration-300">
+                  <SkeletonGrid />
                 </div>
-              ))}
+              )}
+
+              {/* Bottom Layer: Actual Grid (Hidden during calculation to avoid glitches) */}
+              <div 
+                className="w-full h-full transition-opacity duration-500"
+                style={{ opacity: isLayoutReady ? 1 : 0 }}
+              >
+                <VirtuosoGrid
+                  style={{ height: '100%', width: '100%' }}
+                  totalCount={displayedGames.length}
+                  overscan={600}
+                  components={{
+                    List: ListContainer,
+                    Item: ItemContainer
+                  }}
+                  itemContent={(index) => (
+                    <GameCard 
+                        game={displayedGames[index]} 
+                        settings={settings} 
+                        libraryAction={libraryAction}
+                        theme={theme}
+                    />
+                  )}
+                />
+              </div>
             </div>
         );
     }
     
     if (settings.viewMode === 'list') {
         return (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 pb-10 overflow-y-auto h-full px-1 animate-in fade-in duration-300">
                 {displayedGames.map((game) => (
                     <GameListRow
                         key={game.id}
@@ -175,15 +281,15 @@ export const GameLibrary: React.FC = () => {
 
     // Data View (Privacy Grid)
     return (
-        <div className="flex flex-col border rounded-lg overflow-hidden bg-background shadow-sm data-grid-container">
-            <div className="grid grid-cols-12 gap-4 px-4 py-2 bg-muted/30 border-b border-border text-[10px] font-black uppercase tracking-widest text-muted-foreground font-telemetry">
+        <div className="flex flex-col border rounded-lg overflow-hidden bg-background shadow-sm data-grid-container h-full animate-in fade-in duration-300">
+            <div className="grid grid-cols-12 gap-4 px-4 py-2 bg-muted/30 border-b border-border text-[10px] font-black uppercase tracking-widest text-muted-foreground font-telemetry shrink-0">
                 <div className="col-span-5">Identity</div>
                 <div className="col-span-2">State</div>
                 <div className="col-span-2">Telemetry</div>
                 <div className="col-span-2 text-right">Era</div>
                 <div className="col-span-1 text-right">Value</div>
             </div>
-            <div className="flex flex-col">
+            <div className="flex-1 overflow-y-auto flex flex-col">
                 {displayedGames.map((game) => (
                     <DataRow key={game.id} game={game} />
                 ))}
@@ -193,14 +299,14 @@ export const GameLibrary: React.FC = () => {
   };
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto w-full">
-      <div className="flex flex-col gap-6 mb-8">
+    <div className="h-full flex flex-col p-6 max-w-[1600px] mx-auto w-full overflow-hidden">
+      <div className="shrink-0 flex flex-col gap-6 mb-8">
         
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div className="flex items-center gap-4">
             <div>
                 <h1 className="text-3xl font-bold tracking-tight">My Vault</h1>
-                <p className="text-muted-foreground mt-1">
+                <p className="text-muted-foreground mt-1 text-sm">
                 {displayedGames.length} {displayedGames.length === 1 ? 'game' : 'games'} 
                 {games.length !== displayedGames.length && ` (of ${games.length} total)`}
                 </p>
@@ -221,6 +327,14 @@ export const GameLibrary: React.FC = () => {
              >
                 <Dices size={16} />
                 <span className="hidden sm:inline">Random</span>
+             </button>
+
+             <button 
+                onClick={handleManualRefresh}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg font-medium transition-colors bg-card border hover:bg-muted"
+                title="Refresh Library"
+             >
+                <RefreshCw size={16} className={cn(loading && "animate-spin")} />
              </button>
              
              <div className="flex bg-card border rounded-lg p-1">
@@ -448,35 +562,36 @@ export const GameLibrary: React.FC = () => {
         )}
       </div>
 
-      {loading ? (
-        <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        </div>
-      ) : displayedGames.length === 0 ? (
-        <div className="text-center py-20 bg-card border border-dashed rounded-xl">
-          <div className="mx-auto w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-4">
-              <LayoutGrid className="text-muted-foreground" />
-          </div>
-          <h3 className="text-lg font-medium">No games match your filters</h3>
-          <p className="text-muted-foreground mt-2">Try adjusting your search criteria or add a new game.</p>
-          {(filterGenre !== 'All' || filterPlatform !== 'All' || filterTheme !== 'All' || filterStatus !== 'All' || search || filterStore !== 'All' || settings.showDlc) && (
-              <button 
-                onClick={() => {
-                    setSearch('');
-                    setFilterStatus('All');
-                    setFilterGenre('All');
-                    setFilterPlatform('All');
-                    setFilterTheme('All');
-                    setFilterStore('All');
-                    // Reset showDlc via updateSettings if needed, or user toggles it manually
-                }}
-                className="mt-4 text-sm text-primary hover:underline"
-              >
-                  Clear all filters
-              </button>
-          )}
-        </div>
-      ) : renderContent()}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {loading && games.length === 0 && settings.viewMode !== 'grid' ? (
+            <div className="flex justify-center items-center h-64">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+        ) : displayedGames.length === 0 && !loading ? (
+            <div className="text-center py-20 bg-card border border-dashed rounded-xl h-fit">
+            <div className="mx-auto w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-4">
+                <LayoutGrid className="text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-medium">No games match your filters</h3>
+            <p className="text-muted-foreground mt-2">Try adjusting your search criteria or add a new game.</p>
+            {(filterGenre !== 'All' || filterPlatform !== 'All' || filterTheme !== 'All' || filterStatus !== 'All' || search || filterStore !== 'All' || settings.showDlc) && (
+                <button 
+                    onClick={() => {
+                        setSearch('');
+                        setFilterStatus('All');
+                        setFilterGenre('All');
+                        setFilterPlatform('All');
+                        setFilterTheme('All');
+                        setFilterStore('All');
+                    }}
+                    className="mt-4 text-sm text-primary hover:underline"
+                >
+                    Clear all filters
+                </button>
+            )}
+            </div>
+        ) : renderContent()}
+      </div>
     </div>
   );
 };

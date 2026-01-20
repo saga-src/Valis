@@ -1,7 +1,8 @@
-import React from 'react';
-import { Zap, MousePointerClick, MonitorUp } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Zap, MousePointerClick, MonitorUp, Rocket } from 'lucide-react';
 import { useSettings } from '../useSettings';
 import { cn } from '../../../lib/utils/cn';
+import { getSetting, saveSetting } from '../../../lib/storage';
 
 export const GeneralTab = () => {
   const { 
@@ -9,6 +10,35 @@ export const GeneralTab = () => {
     libraryAction, setLibraryAction,
     startAtLogin, setStartAtLogin
   } = useSettings();
+
+  // 1. Optimistic State Initialization
+  const [libraryCacheEnabled, setLibraryCacheEnabled] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // 2. Fetch initial value on mount
+  useEffect(() => {
+    const loadCacheSetting = async () => {
+        try {
+            const val = await getSetting('enable_library_cache');
+            setLibraryCacheEnabled(!!val);
+        } catch (e) {
+            console.error('[Settings] Failed to load cache setting:', e);
+        } finally {
+            setIsLoaded(true);
+        }
+    };
+    loadCacheSetting();
+  }, []);
+
+  // 3. Optimistic Handler
+  const handleToggleCache = (val: boolean) => {
+    setLibraryCacheEnabled(val); // Instant feedback
+    saveSetting('enable_library_cache', val).catch(e => {
+        console.error('[Settings] Failed to save cache setting:', e);
+        // Optional: revert state if save fails
+        // setLibraryCacheEnabled(!val);
+    });
+  };
 
   const Toggle = ({ checked, onChange }: any) => (
     <label className="relative inline-flex items-center cursor-pointer">
@@ -35,6 +65,24 @@ export const GeneralTab = () => {
                 <p className="text-xs text-muted-foreground">Automatically launch Valis when you sign in to your computer.</p>
             </div>
             <Toggle checked={startAtLogin} onChange={setStartAtLogin} />
+        </div>
+      </div>
+
+      {/* Performance Section */}
+      <div className="p-6 border rounded-xl bg-card transition-all hover:shadow-md">
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <Rocket size={20} className="text-primary" /> Performance
+        </h2>
+        <div className="flex items-center justify-between">
+            <div>
+                <p className="font-bold text-sm">Enable Library Cache <span className="text-[10px] text-primary bg-primary/10 px-1.5 py-0.5 rounded ml-1">EXPERIMENTAL</span></p>
+                <p className="text-xs text-muted-foreground">Keeps library loaded in memory for instant switching. Disable if you experience sync issues.</p>
+            </div>
+            <Toggle 
+                checked={libraryCacheEnabled} 
+                onChange={handleToggleCache} 
+                disabled={!isLoaded}
+            />
         </div>
       </div>
 

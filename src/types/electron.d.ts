@@ -85,7 +85,7 @@ export interface StorageApi {
   // Auth
   authSteam: () => Promise<{ success: boolean; steamId?: string; message?: string }>;
   authEpic: () => Promise<{ success: boolean; message?: string }>;
-  authPsn: (npsso?: string) => Promise<{ success: boolean; message?: string }>;
+  authPsn: (npsso) => Promise<{ success: boolean; message?: string }>;
   authXbox: () => Promise<{ success: boolean; username?: string; error?: string }>;
   getSteamUser: () => Promise<{ steamId?: string }>;
   syncSteamLibrary: () => Promise<{ success: boolean; added?: number; synced?: number; error?: string }>;
@@ -123,6 +123,7 @@ export interface StorageApi {
   setSystemMeta: (key: string, value: string) => Promise<{ success: boolean }>;
   restoreBackup: (data: any) => Promise<{ success: boolean; error?: string }>;
   getDatabaseDump: () => Promise<{ data: any }>;
+  getDatabaseFile: () => Promise<Uint8Array>;
 
   // Safe Exit Handshake
   onAppClosing: (callback: () => void) => () => void;

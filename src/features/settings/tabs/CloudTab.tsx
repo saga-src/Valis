@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Cloud, LogOut, Loader2, User, RefreshCw, Database } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
@@ -152,12 +153,37 @@ export const CloudTab = () => {
     try {
       setIsSyncing(true);
       await performCloudUpload();
-      toast.success("Database backup synchronized to cloud.");
-      setIsSyncing(false);
+      toast.success("JSON backup synchronized to cloud.");
     } catch (e) {
       console.error(e);
+      toast.error("JSON backup failed.");
+    } finally {
       setIsSyncing(false);
-      toast.error("Database backup failed.");
+    }
+  };
+
+  const handleDatabaseBinaryUpload = async () => {
+    if (!user) return;
+    try {
+      setIsSyncing(true);
+      toast.info("Preparing binary database snapshot...");
+      
+      const fileBuffer = await window.api.getDatabaseFile();
+      const blob = new Blob([fileBuffer], { type: 'application/x-sqlite3' });
+      
+      const fileName = `valis_full_db_${user.id}_${Date.now()}.db`;
+      const { error } = await supabase.storage
+        .from('backups')
+        .upload(`${user.id}/${fileName}`, blob, { upsert: true });
+
+      if (error) throw error;
+      
+      toast.success("Database uploaded successfully!");
+    } catch (e: any) {
+      console.error(e);
+      toast.error(`Database upload failed: ${e.message}`);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -209,7 +235,7 @@ export const CloudTab = () => {
           {/* Manual Sync Controls */}
           <div className="p-6 border rounded-xl bg-card transition-all hover:shadow-md">
             <h3 className="text-sm font-bold uppercase text-muted-foreground tracking-widest mb-4">Manual Operations</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               <button 
                 onClick={handleProfileSync}
                 disabled={isSyncing}
@@ -224,12 +250,21 @@ export const CloudTab = () => {
                 disabled={isSyncing}
                 className="flex items-center justify-center gap-3 p-4 bg-muted/30 border border-border rounded-xl hover:bg-muted/50 hover:border-primary/50 transition-all font-bold text-sm group"
               >
-                {isSyncing ? <Loader2 size={18} className="animate-spin text-primary" /> : <Database size={18} className="text-primary" />}
-                Backup Database
+                {isSyncing ? <Loader2 size={18} className="animate-spin text-primary" /> : <RefreshCw size={18} className="text-primary" />}
+                Backup JSON Metadata
+              </button>
+
+              <button 
+                onClick={handleDatabaseBinaryUpload}
+                disabled={isSyncing}
+                className="flex items-center justify-center gap-3 p-4 bg-primary/10 border border-primary/30 rounded-xl hover:bg-primary/20 hover:border-primary/50 transition-all font-bold text-sm group text-primary shadow-sm"
+              >
+                {isSyncing ? <Loader2 size={18} className="animate-spin" /> : <Database size={18} />}
+                Upload Full Database (.db)
               </button>
             </div>
             <p className="text-[10px] text-muted-foreground mt-4 italic">
-              Note: Auto-sync triggers every 5 minutes and after major library updates.
+              Note: Auto-sync triggers every 5 minutes and after major library updates. Binary backups are permanent archives.
             </p>
           </div>
         </div>

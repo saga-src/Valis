@@ -1,9 +1,11 @@
+
 import { ipcMain, Notification, app } from 'electron';
 import { handleImportSessions, handleExportSessions } from '../lib/excel.js';
 import FactoryResetService from '../services/FactoryResetService.js';
 import path from 'path';
+import fs from 'fs';
 import si from 'systeminformation';
-import { db } from '../db/client.js';
+import { db, rawDb } from '../db/client.js';
 import { getProfileSyncStats } from '../db/queries.js';
 
 // Define all tables that contain user data.
@@ -116,6 +118,22 @@ export function registerSystemHandlers() {
       data[table] = await db.selectFrom(table).selectAll().execute();
     }
     return { data };
+  });
+
+  // Safe Database File Export (Binary snapshot)
+  ipcMain.handle('get-database-file', async () => {
+    const tempPath = path.join(app.getPath('userData'), 'valis_backup_temp.db');
+    try {
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        // Create a consistent point-in-time snapshot of the database
+        rawDb.prepare("VACUUM INTO ?").run(tempPath);
+        const buffer = fs.readFileSync(tempPath);
+        fs.unlinkSync(tempPath);
+        return new Uint8Array(buffer);
+    } catch (error) {
+        console.error('Database file export failed:', error);
+        throw error;
+    }
   });
 
   // 2. Restore Backup (Sync Download / Manual Restore)

@@ -1,3 +1,4 @@
+
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
@@ -84,6 +85,7 @@ contextBridge.exposeInMainWorld('api', {
   setSystemMeta: (key, value) => ipcRenderer.invoke('system:set-meta', key, value),
   restoreBackup: (data) => ipcRenderer.invoke('system:restore-backup', data),
   getDatabaseDump: () => ipcRenderer.invoke('system:get-database-dump'),
+  getDatabaseFile: () => ipcRenderer.invoke('get-database-file'),
 
   // Excel
   importSessionsExcel: () => ipcRenderer.invoke('excel:import-sessions'),
