@@ -1,14 +1,15 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Modal from '../../../components/ui/Modal';
-import { selectExecutable } from '../../../lib/storage';
-import { Save, FolderOpen, FileCode, Clock, Plus, Trash2, Pencil, Gamepad2, AlertCircle, Calendar } from 'lucide-react';
+import { openFileDialog } from '../../../lib/storage';
+import { Save, FolderOpen, FileCode, Clock, Plus, Trash2, Pencil, Gamepad2, AlertCircle, Calendar, Tag as TagIcon, X } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
-import { formatDuration } from '../../../lib/utils/format';
 import { cn } from '../../../lib/utils/cn';
 import { useSocialBroadcast } from '../../social/hooks/useSocialBroadcast';
 import { useAuth } from '../../../context/AuthContext';
 import { supabase } from '../../../lib/cloud/supabase';
 import { PlayerStatsService } from '../../social/services/PlayerStatsService';
+import { Tag } from '../../../types';
+import { useLibraryStore } from '../../../store/libraryStore';
 
 interface EditGameModalProps {
   isOpen: boolean;
@@ -26,11 +27,10 @@ interface LegacyEntry {
 
 interface OwnedPlatform {
   id: number;
-  acquired_price: number; // Updated field
+  acquired_price: number;
   acquired_at?: number; 
 }
 
-// Master list reference for static fallback or name resolution
 const STATIC_PLATFORM_NAMES: Record<number, string> = {
   99001: 'Steam',
   99002: 'Epic Games',
@@ -50,32 +50,30 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
   const { toast } = useToast();
   const { broadcast } = useSocialBroadcast();
   const { user } = useAuth();
+  const invalidateCache = useLibraryStore(state => state.invalidateCache);
 
   const [title, setTitle] = useState(game?.title || '');
   const [status, setStatus] = useState(game?.status || 'Backlog');
   const [executable, setExecutable] = useState(game?.executable || '');
   const [isSaving, setIsSaving] = useState(false);
   
-  // --- ROBUST PARSER ---
+  // ⚡ Tag State
+  const [availableTags, setAvailableTags] = useState<Tag[]>([]);
+  const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
+  const [tagInputValue, setTagInputValue] = useState('');
+  const [isTagsDropdownOpen, setIsTagsDropdownOpen] = useState(false);
+
   const parsePlatformData = (raw: any[]): OwnedPlatform[] => {
     if (!Array.isArray(raw)) return [];
     return raw.map((p: any) => ({
-        // FIX: Use 'platform_id' (The real platform ID) first. 
-        // Fallback to 'id' only if it's a simple list from frontend state.
         id: Number(p.platform_id ?? p.id),
-        
-        // FIX: Use 'acquired_price' (DB column) first. Fallback to 'price'.
         acquired_price: Number(p.acquired_price ?? p.price ?? 0),
-
-        // Map acquired_at if present
         acquired_at: p.acquired_at ? Number(p.acquired_at) : undefined
     }));
   };
 
-  // ⚡ Platform Ownership State
   const [ownedPlatforms, setOwnedPlatforms] = useState<OwnedPlatform[]>(() => {
     try {
-        // Prioritize explicit ownership object, fall back to simple ID list
         if (game?.platform_ownership) {
             const raw = typeof game.platform_ownership === 'string' ? JSON.parse(game.platform_ownership) : game.platform_ownership;
             return parsePlatformData(raw);
@@ -90,9 +88,8 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
   
   const [platformToAdd, setPlatformToAdd] = useState<string>('');
   const [priceToAdd, setPriceToAdd] = useState<string>('');
-  const [dateToAdd, setDateToAdd] = useState<string>(''); // YYYY-MM-DD for input
+  const [dateToAdd, setDateToAdd] = useState<string>('');
 
-  // ⚡ Legacy Playtime State (Array)
   const [legacyEntries, setLegacyEntries] = useState<LegacyEntry[]>(() => {
     if (!game?.legacy_playtime_seconds) return [];
     if (Array.isArray(game.legacy_playtime_seconds)) return game.legacy_playtime_seconds;
@@ -102,20 +99,25 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
     return [];
   });
 
-  // New Entry State
   const [newSource, setNewSource] = useState('Manual');
   const [newHours, setNewHours] = useState('');
   const [newMinutes, setNewMinutes] = useState('');
   const [newSeconds, setNewSeconds] = useState('');
 
-  // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
         setTitle(game?.title || '');
         setStatus(game?.status || 'Backlog');
         setExecutable(game?.executable || '');
         
-        // Reset Platforms using robust parser
+        // Reset Tags
+        setSelectedTags(game?.tags || []);
+        
+        // Fetch All Available Tags
+        if (window.api?.getTags) {
+            window.api.getTags().then(setAvailableTags);
+        }
+
         try {
             if (game?.platform_ownership) {
                 const raw = typeof game.platform_ownership === 'string' ? JSON.parse(game.platform_ownership) : game.platform_ownership;
@@ -128,40 +130,31 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
             }
         } catch { setOwnedPlatforms([]); }
         
-        // Reset legacy
         if (Array.isArray(game.legacy_playtime_seconds)) setLegacyEntries(game.legacy_playtime_seconds);
         else if (typeof game.legacy_playtime_seconds === 'number') setLegacyEntries([{ source: 'Manual', platform_id: null, seconds: game.legacy_playtime_seconds }]);
         else setLegacyEntries([]);
         
-        // Reset new entry inputs
         setNewHours('');
         setNewMinutes('');
         setNewSeconds('');
         setNewSource('Manual');
         setPlatformToAdd('');
         setPriceToAdd('');
-        
-        // Default date to today for easy adding
         setDateToAdd(new Date().toISOString().split('T')[0]);
     }
   }, [isOpen, game]);
 
-  // Helper to safe parse JSON
   const safeParse = (json: any) => {
     try { return typeof json === 'string' ? JSON.parse(json) : json || []; } catch { return []; }
   };
 
-  // Helper to resolve platform names
   const getPlatformName = (id: number) => {
     if (STATIC_PLATFORM_NAMES[id]) return STATIC_PLATFORM_NAMES[id];
-    
-    // Look in game metadata
     const platforms = safeParse(game?.platforms);
     const match = platforms.find((p: any) => p.id === id);
     return match?.name || match?.abbreviation || `ID: ${id}`;
   };
 
-  // Helper to format timestamp for input (YYYY-MM-DD)
   const formatTimestampForInput = (ts: number | undefined) => {
     if (!ts) return '';
     try {
@@ -169,7 +162,6 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
     } catch { return ''; }
   };
 
-  // Derived Options for Legacy Dropdown
   const platformOptions = useMemo(() => {
     const ownedNames = ownedPlatforms.map(p => getPlatformName(p.id));
     const existingSources = legacyEntries.map(e => e.source);
@@ -177,20 +169,12 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
     return Array.from(unique);
   }, [ownedPlatforms, legacyEntries]);
 
-  // ⚡ DYNAMIC AVAILABLE PLATFORMS
   const availableToAdd = useMemo(() => {
     const rawPlatforms = safeParse(game?.platforms);
     const options: { id: number; name: string }[] = [];
-
-    // 1. Add Specific Platforms from Metadata
     rawPlatforms.forEach((p: any) => {
-        // ID 6 is PC (Windows), we handle it via stores below
-        if (p.id !== 6) {
-            options.push({ id: p.id, name: p.name || p.abbreviation || `ID: ${p.id}` });
-        }
+        if (p.id !== 6) options.push({ id: p.id, name: p.name || p.abbreviation || `ID: ${p.id}` });
     });
-
-    // 2. If PC (6) exists in metadata, enable PC Stores
     const hasPc = rawPlatforms.some((p: any) => p.id === 6);
     if (hasPc) {
         options.push(
@@ -201,302 +185,133 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
             { id: 99005, name: 'Standalone' }
         );
     }
-
-    // 3. Always add Utilities
-    options.push(
-        { id: 99999, name: 'Unofficial Copy' },
-        { id: 100000, name: 'SteamTools' }
-    );
-
-    // 4. Filter out already owned
+    options.push({ id: 99999, name: 'Unofficial Copy' }, { id: 100000, name: 'SteamTools' });
     return options.filter(p => !ownedPlatforms.some(op => op.id === p.id));
   }, [game, ownedPlatforms]);
 
-  // --- Platform Handlers ---
+  // --- Tag Management ---
+  const filteredTagSuggestions = useMemo(() => {
+    const input = tagInputValue.trim().toLowerCase();
+    if (!input) return [];
+    return availableTags.filter(t => 
+      t.name.toLowerCase().includes(input) && 
+      !selectedTags.some(st => st.id === t.id)
+    );
+  }, [tagInputValue, availableTags, selectedTags]);
+
+  const handleAddTag = (tag: Tag) => {
+    if (!selectedTags.some(st => st.id === tag.id)) {
+      setSelectedTags([...selectedTags, tag]);
+    }
+    setTagInputValue('');
+    setIsTagsDropdownOpen(false);
+  };
+
+  const handleCreateAndAddTag = async () => {
+    const name = tagInputValue.trim();
+    if (!name) return;
+
+    const existing = availableTags.find(t => t.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      handleAddTag(existing);
+      return;
+    }
+
+    if (!window.api?.createTag) return;
+    const res = await window.api.createTag(name, '#7c3aed');
+    if (res.success) {
+      const newTag: Tag = { id: res.id, name, color: '#7c3aed' };
+      setAvailableTags([...availableTags, newTag]);
+      setSelectedTags([...selectedTags, newTag]);
+      setTagInputValue('');
+      setIsTagsDropdownOpen(false);
+    }
+  };
+
+  const handleRemoveTag = (id: number) => {
+    setSelectedTags(prev => prev.filter(t => t.id !== id));
+  };
+
   const handleAddPlatform = () => {
     const id = Number(platformToAdd);
     if (!id || ownedPlatforms.some(p => p.id === id)) return;
-    
     const price = parseFloat(priceToAdd) || 0;
     const date = dateToAdd ? new Date(dateToAdd).getTime() : Date.now();
-
     setOwnedPlatforms([...ownedPlatforms, { id, acquired_price: price, acquired_at: date }]);
-    
-    // NEW: Broadcast acquisition
-    const platformName = getPlatformName(id);
-    broadcast('status', {
-        game: title, // Use state title
-        status: 'Acquired',
-        detail: `Bought on ${platformName} for $${price.toFixed(2)}`
-    });
-
     setPlatformToAdd('');
     setPriceToAdd('');
-    // Keep dateToAdd as today/last selected for convenience
   };
 
   const handleRemovePlatform = (id: number) => {
     setOwnedPlatforms(prev => prev.filter(p => p.id !== id));
   };
 
-  const handleEditPlatform = (id: number) => {
-    const p = ownedPlatforms.find(op => op.id === id);
-    if (!p) return;
-    setPlatformToAdd(String(p.id));
-    setPriceToAdd(String(p.acquired_price));
-    if (p.acquired_at) {
-        setDateToAdd(new Date(p.acquired_at).toISOString().split('T')[0]);
-    }
-    handleRemovePlatform(id); // Remove from list to allow re-adding updated version
-  };
-  
-  // Handler to update date directly in the list
-  const updatePlatformDate = (id: number, dateStr: string) => {
-      const ts = dateStr ? new Date(dateStr).getTime() : undefined;
-      setOwnedPlatforms(prev => prev.map(p => 
-          p.id === id ? { ...p, acquired_at: ts } : p
-      ));
-  };
-
-  // --- Legacy Handlers ---
   const handleAddEntry = () => {
     const h = parseInt(newHours) || 0;
     const m = parseInt(newMinutes) || 0;
     const s = parseInt(newSeconds) || 0;
     const totalSeconds = (h * 3600) + (m * 60) + s;
-
-    if (totalSeconds <= 0) {
-        toast.error("Enter a valid time duration");
-        return;
-    }
-
-    // ⚡ STRICT SOURCE NAME MATCHING (Ignoring platform_id/metadata)
-    const existingIndex = legacyEntries.findIndex(e => 
-      e.source?.toLowerCase().trim() === newSource.toLowerCase().trim()
-    );
-
+    if (totalSeconds <= 0) return;
+    const existingIndex = legacyEntries.findIndex(e => e.source?.toLowerCase().trim() === newSource.toLowerCase().trim());
     if (existingIndex !== -1) {
-        // Update existing source entry
         const updatedEntries = [...legacyEntries];
-        updatedEntries[existingIndex] = { 
-            ...updatedEntries[existingIndex], 
-            seconds: totalSeconds 
-        };
+        updatedEntries[existingIndex] = { ...updatedEntries[existingIndex], seconds: totalSeconds };
         setLegacyEntries(updatedEntries);
-        toast.info(`Updated existing ${newSource} record`);
     } else {
-        // Insert new entry
         setLegacyEntries([...legacyEntries, { source: newSource, platform_id: null, seconds: totalSeconds }]);
     }
-
-    setNewHours('');
-    setNewMinutes('');
-    setNewSeconds('');
-    setNewSource('Manual');
-  };
-
-  const handleEditEntry = (index: number) => {
-    const entry = legacyEntries[index];
-    setNewSource(entry.source);
-    
-    const h = Math.floor(entry.seconds / 3600);
-    const m = Math.floor((entry.seconds % 3600) / 60);
-    const s = Math.floor(entry.seconds % 60);
-    
-    setNewHours(String(h));
-    setNewMinutes(String(m));
-    setNewSeconds(String(s));
-    
-    // We don't remove here, handleAddEntry handles the upsert logic
-  };
-
-  const handleRemoveEntry = (index: number) => {
-    setLegacyEntries(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const formatLegacyTime = (totalSeconds: number) => {
-      const h = Math.floor(totalSeconds / 3600);
-      const m = Math.floor((totalSeconds % 3600) / 60);
-      const s = Math.floor(totalSeconds % 60);
-      
-      const parts = [];
-      if (h > 0) parts.push(`${h}h`);
-      if (m > 0) parts.push(`${m}m`);
-      if (s > 0) parts.push(`${s}s`);
-      
-      return parts.length > 0 ? parts.join(' ') : '0s';
+    setNewHours(''); setNewMinutes(''); setNewSeconds(''); setNewSource('Manual');
   };
 
   const handleLinkExecutable = async () => {
-    try {
-      const fileName = await selectExecutable();
-      if (fileName) {
-        setExecutable(fileName);
-      }
-    } catch (e) {
-      console.error("Failed to select executable", e);
-      toast.error("Failed to select executable");
-    }
+    const fullPath = await openFileDialog();
+    if (fullPath) setExecutable(fullPath);
   };
 
   const handleSave = async () => {
-    // 1. Prepare Updated Data
-    // 🟢 FIX: Explicitly handle removal. If 'executable' is empty, send NULL.
     const finalExecutable = (executable && executable.trim().length > 0) ? executable : null;
 
     const updated = {
       ...game,
       title,
       status,
-      skip_achievement_scan: true, // Signal backend to skip automated achievement scans for this update
+      skip_achievement_scan: true,
       executable: finalExecutable,
-      legacy_playtime_seconds: legacyEntries, // ⚡ Save Array
+      legacy_playtime_seconds: legacyEntries,
       platform_ownership: ownedPlatforms.map(p => ({
-          id: p.id,            // This is the platform_id (e.g. 48)
-          platform_id: p.id,   // Explicitly send platform_id for backend clarity
-          acquired_price: p.acquired_price, // Correct DB column name
-          acquired_at: p.acquired_at // New date field
+          id: p.id,
+          platform_id: p.id,
+          acquired_price: p.acquired_price,
+          acquired_at: p.acquired_at
       }))
     };
 
-    // 2. Optimistic UI Update (Instant Close)
     setIsSaving(true);
-    await onSave(updated);
-    
-    if (onSaveSuccess) onSaveSuccess();
-    toast.success("Game details updated");
-    onClose();
-    setIsSaving(false);
+    try {
+        await onSave(updated);
+        
+        // Persist Normalized Tags
+        if (window.api?.setGameTags) {
+          await window.api.setGameTags(game.id, selectedTags.map(t => t.id));
+        }
 
-    // 3. Background Broadcasts (Detached)
-    void (async () => {
-      if (!user) return;
-      
-      try {
-          // Identify if we need to credit/debit completion stats
-          let beatDelta = 0;
-          let platinumDelta = 0;
-          let xpDelta = 0;
+        // ⚡ Force Cache Invalidation to refresh Library grid
+        invalidateCache();
 
-          // Helper to check if a status counts as "Beaten"
-          const isBeat = (s: string) => s === 'Beat' || s === 'Completed';
-
-          if (isBeat(status) && !isBeat(game.status)) {
-              // Game wasn't beaten, now it is -> Add Beat
-              beatDelta = 1;
-              xpDelta += 250;
-              if (status === 'Completed') {
-                  platinumDelta = 1;
-                  xpDelta += 1000;
-              }
-          } else if (!isBeat(status) && isBeat(game.status)) {
-              // Game was beaten, now it isn't -> Remove Beat
-              beatDelta = -1;
-              xpDelta -= 250;
-              if (game.status === 'Completed') {
-                  platinumDelta = -1;
-                  xpDelta -= 1000;
-              }
-          } else if (status === 'Completed' && game.status === 'Beat') {
-              // Upgraded to Platinum
-              platinumDelta = 1;
-              xpDelta += 1000;
-          } else if (status === 'Beat' && game.status === 'Completed') {
-              // Downgraded from Platinum
-              platinumDelta = -1;
-              xpDelta -= 1000;
-          }
-
-          if (beatDelta !== 0 || platinumDelta !== 0) {
-              console.log('Broadcasting Game Status Update (Background):', { beatDelta, platinumDelta, xpDelta });
-              
-              const tasks: Promise<any>[] = [];
-
-              // A. Stats
-              const statsPayload: any = { xp: xpDelta };
-              if (beatDelta !== 0) statsPayload.games_beaten = beatDelta;
-              if (platinumDelta !== 0) statsPayload.platinum = platinumDelta;
-              
-              tasks.push(supabase.rpc('update_player_stats', statsPayload));
-
-              // B. Leaderboards - Global
-              if (beatDelta !== 0) {
-                  tasks.push(supabase.rpc('update_leaderboard', { p_category: 'beats', p_sub_category: 'global', p_increment: beatDelta }));
-              }
-              if (platinumDelta !== 0) {
-                  tasks.push(supabase.rpc('update_leaderboard', { p_category: 'platinum', p_sub_category: 'global', p_increment: platinumDelta }));
-              }
-
-              // C. Leaderboards - Genres
-              let genres: any[] = [];
-              try {
-                  genres = typeof game.genres === 'string' ? JSON.parse(game.genres) : game.genres;
-              } catch { /* ignore */ }
-              
-              if (Array.isArray(genres)) {
-                  for (const g of genres) {
-                      const genreName = typeof g === 'string' ? g : g.name;
-                      if (genreName) {
-                          if (beatDelta !== 0) {
-                              tasks.push(supabase.rpc('update_leaderboard', { p_category: 'beats', p_sub_category: genreName, p_increment: beatDelta }));
-                          }
-                          if (platinumDelta !== 0) {
-                              tasks.push(supabase.rpc('update_leaderboard', { p_category: 'platinum', p_sub_category: genreName, p_increment: platinumDelta }));
-                          }
-                      }
-                  }
-              }
-
-              // D. Activity Feed (Only if positive change)
-              if (beatDelta > 0 || platinumDelta > 0) {
-                  const activityType = status === 'Completed' ? 'achievement' : 'status';
-                  const detail = status === 'Completed' ? 'Achieved 100% Completion' : 'Beat the game';
-                  
-                  tasks.push(supabase.from('activities').insert({
-                      user_id: user.id,
-                      game_id: game.id,
-                      type: activityType,
-                      data: {
-                          game: game.title || game.name,
-                          cover_url: game.cover_url,
-                          status: status,
-                          detail: detail
-                      }
-                  }));
-              }
-              
-              // E. Update PlayerStats JSONB Lists (Sync Service)
-              if (status === 'Beat' || status === 'Completed') {
-                  tasks.push(PlayerStatsService.syncBeatenGame(user.id, {
-                      id: String(game.id),
-                      title: title, // Use current form title
-                      cover: game.cover_url || '',
-                      score: game.final_score || 0
-                  }));
-              }
-              
-              if (status === 'Completed') {
-                  tasks.push(PlayerStatsService.syncCompletedGame(user.id, {
-                      id: String(game.id),
-                      title: title,
-                      cover: game.cover_url || '',
-                      achievements: '100%' // Basic completion flag
-                  }));
-              }
-
-              await Promise.all(tasks);
-          }
-      } catch (err) {
-          console.error('[EditGameModal] Background sync failed:', err);
-      }
-    })();
+        if (onSaveSuccess) onSaveSuccess();
+        toast.success("Game details updated");
+        onClose();
+    } catch (e: any) {
+        console.error(e);
+        toast.error("Failed to save changes");
+    } finally {
+        setIsSaving(false);
+    }
   };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Edit Game Details">
       <div className="space-y-6">
-        
-        {/* Row 1: Title & Status */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
                 <label className="text-[10px] font-bold uppercase text-primary/80 tracking-wider">Game Title</label>
@@ -507,11 +322,9 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
                     className="w-full bg-background/50 border border-border rounded-lg p-2.5 text-sm focus:ring-1 focus:ring-primary outline-none transition-all"
                 />
             </div>
-
-            <div className="space-y-1.5">
+            <div className="space-y-1.5" id="edit-status-select">
                 <label className="text-[10px] font-bold uppercase text-primary/80 tracking-wider">Status</label>
                 <select
-                    id="edit-status-select"
                     value={status}
                     onChange={(e) => setStatus(e.target.value)}
                     className="w-full bg-background/50 border border-border rounded-lg p-2.5 text-sm focus:ring-1 focus:ring-primary outline-none transition-all cursor-pointer"
@@ -527,55 +340,119 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
             </div>
         </div>
 
-        {/* Row 2: Executable */}
-        <div id="edit-link-section" className="space-y-1.5">
+        {/* ⚡ NEW: TAG MANAGEMENT SECTION */}
+        <div className="space-y-1.5">
+          <label className="text-[10px] font-bold uppercase text-primary/80 tracking-wider flex items-center gap-1.5">
+            <TagIcon size={12} /> Tags
+          </label>
+          <div className="relative">
+            <div className="flex flex-wrap gap-2 p-2 bg-background/50 border border-border rounded-lg min-h-[46px] focus-within:ring-1 focus-within:ring-primary transition-all">
+              {selectedTags.map(tag => (
+                <span 
+                  key={tag.id} 
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded bg-primary/10 border border-primary/20 text-xs font-bold text-primary animate-in zoom-in-95 duration-200"
+                >
+                  {tag.name}
+                  <button onClick={() => handleRemoveTag(tag.id)} className="hover:text-primary-foreground hover:bg-primary rounded transition-colors">
+                    <X size={12} strokeWidth={3} />
+                  </button>
+                </span>
+              ))}
+              <input 
+                type="text"
+                value={tagInputValue}
+                onChange={(e) => {
+                  setTagInputValue(e.target.value);
+                  setIsTagsDropdownOpen(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (filteredTagSuggestions.length > 0) handleAddTag(filteredTagSuggestions[0]);
+                    else handleCreateAndAddTag();
+                  }
+                  if (e.key === 'Escape') setIsTagsDropdownOpen(false);
+                }}
+                onFocus={() => setIsTagsDropdownOpen(true)}
+                placeholder={selectedTags.length === 0 ? "Add tags..." : ""}
+                className="flex-1 bg-transparent outline-none text-sm min-w-[100px] placeholder:text-muted-foreground/50"
+              />
+            </div>
+
+            {/* Suggestions Dropdown */}
+            {isTagsDropdownOpen && (tagInputValue.trim() !== '') && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                  {filteredTagSuggestions.map(tag => (
+                    <button
+                      key={tag.id}
+                      onClick={() => handleAddTag(tag)}
+                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2 group"
+                    >
+                      <TagIcon size={14} className="text-muted-foreground group-hover:text-primary" />
+                      <span className="font-medium">{tag.name}</span>
+                    </button>
+                  ))}
+                  
+                  {/* Create New Option */}
+                  {!availableTags.some(t => t.name.toLowerCase() === tagInputValue.trim().toLowerCase()) && (
+                    <button
+                      onClick={handleCreateAndAddTag}
+                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-primary/10 border-t border-border transition-colors flex items-center gap-2 text-primary font-bold"
+                    >
+                      <Plus size={16} />
+                      Create "{tagInputValue.trim()}"
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* Click outside closer for dropdown */}
+            {isTagsDropdownOpen && (
+              <div className="fixed inset-0 z-40" onClick={() => setIsTagsDropdownOpen(false)} />
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-1.5" id="edit-link-section">
           <label className="text-[10px] font-bold uppercase text-primary/80 tracking-wider flex items-center gap-1.5">
             <FileCode size={12} /> Linked Executable
           </label>
           <div className="flex gap-2">
             <input 
-              name="executable_path"
               type="text" 
               value={executable || ''}
               readOnly
               placeholder="No executable linked"
-              className="flex-1 bg-muted/20 border border-border rounded-lg p-2.5 text-xs text-muted-foreground cursor-not-allowed outline-none font-mono"
+              className="flex-1 bg-muted/20 border border-border rounded-lg p-2.5 text-xs text-muted-foreground cursor-not-allowed outline-none font-mono truncate"
+              title={executable || ""}
             />
-            
-            {/* 🟢 NEW: Clear Button (Only shows if executable exists) */}
             {executable && (
                 <button 
                   type="button"
                   onClick={() => setExecutable('')}
                   className="px-3 bg-destructive/10 hover:bg-destructive/20 text-destructive border border-destructive/20 rounded-lg transition-colors flex items-center justify-center"
-                  title="Clear / Unlink Executable"
                 >
                   <Trash2 size={16} />
                 </button>
             )}
-
             <button 
               type="button"
               onClick={handleLinkExecutable}
               className="px-4 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-sm font-medium rounded-lg transition-colors flex items-center gap-2 border border-border/50"
-              title="Select .exe file"
             >
               <FolderOpen size={16} />
+              <span>Browse...</span>
             </button>
           </div>
-          <p className="text-[9px] text-muted-foreground pl-1">
-            Link the game's <code>.exe</code> file to enable auto-tracking features.
-          </p>
         </div>
 
-        {/* Row 3: Platform Ownership Manager */}
-        <div className="space-y-2">
+        <div className="space-y-2" id="edit-platforms-section">
             <label className="text-[10px] font-bold uppercase text-primary/80 tracking-wider flex items-center gap-1.5">
                 <Gamepad2 size={12} /> Managed Platforms
             </label>
-            
-            <div id="edit-platforms-section" className="bg-muted/30 border border-border rounded-xl overflow-hidden">
-                {/* List Header */}
+            <div className="bg-muted/30 border border-border rounded-xl overflow-hidden">
                 {ownedPlatforms.length > 0 && (
                     <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-muted/50 border-b border-border text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
                         <div className="col-span-4">Platform</div>
@@ -584,125 +461,60 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
                         <div className="col-span-2 text-right">Action</div>
                     </div>
                 )}
-
-                {/* List Items */}
                 <div className="divide-y divide-border/50">
-                    {ownedPlatforms.length > 0 ? ownedPlatforms.map(p => (
+                    {ownedPlatforms.map(p => (
                         <div key={p.id} className="grid grid-cols-12 gap-2 px-4 py-2 items-center text-sm hover:bg-muted/20 transition-colors">
-                            <div className="col-span-4 font-bold truncate" title={getPlatformName(p.id)}>
-                                {getPlatformName(p.id)}
-                            </div>
+                            <div className="col-span-4 font-bold truncate">{getPlatformName(p.id)}</div>
                             <div className="col-span-4 text-right">
                                 <input
                                     type="date"
                                     value={formatTimestampForInput(p.acquired_at)}
-                                    onChange={(e) => updatePlatformDate(p.id, e.target.value)}
-                                    className="bg-transparent text-xs text-muted-foreground font-mono text-right border-none focus:ring-0 w-full p-0 cursor-pointer hover:text-foreground transition-colors"
-                                    title="Acquisition Date"
+                                    onChange={(e) => {
+                                      const ts = e.target.value ? new Date(e.target.value).getTime() : undefined;
+                                      setOwnedPlatforms(prev => prev.map(op => op.id === p.id ? { ...op, acquired_at: ts } : op));
+                                    }}
+                                    className="bg-transparent text-xs text-muted-foreground font-mono text-right border-none focus:ring-0 w-full p-0 cursor-pointer hover:text-foreground"
                                 />
                             </div>
-                            <div className="col-span-2 text-right font-mono text-xs">
-                                ${p.acquired_price.toFixed(2)}
-                            </div>
+                            <div className="col-span-2 text-right font-mono text-xs">${p.acquired_price.toFixed(2)}</div>
                             <div className="col-span-2 flex justify-end gap-1">
-                                <button 
-                                    onClick={() => handleEditPlatform(p.id)}
-                                    className="text-muted-foreground hover:text-primary p-1.5 rounded-md hover:bg-primary/10 transition-colors"
-                                    title="Edit"
-                                >
-                                    <Pencil size={14} />
-                                </button>
-                                <button 
-                                    onClick={() => handleRemovePlatform(p.id)}
-                                    className="text-muted-foreground hover:text-destructive p-1.5 rounded-md hover:bg-destructive/10 transition-colors"
-                                    title="Remove"
-                                >
-                                    <Trash2 size={14} />
-                                </button>
+                                <button onClick={() => {
+                                  setPlatformToAdd(String(p.id)); setPriceToAdd(String(p.acquired_price));
+                                  if (p.acquired_at) setDateToAdd(new Date(p.acquired_at).toISOString().split('T')[0]);
+                                  handleRemovePlatform(p.id);
+                                }} className="text-muted-foreground hover:text-primary p-1.5 rounded-md transition-colors"><Pencil size={14} /></button>
+                                <button onClick={() => handleRemovePlatform(p.id)} className="text-muted-foreground hover:text-destructive p-1.5 rounded-md transition-colors"><Trash2 size={14} /></button>
                             </div>
                         </div>
-                    )) : (
-                        <div className="p-6 text-center text-xs text-muted-foreground italic flex flex-col items-center gap-2">
-                            <AlertCircle size={16} className="opacity-50" />
-                            No platforms associated. Add one below.
-                        </div>
-                    )}
+                    ))}
+                    {ownedPlatforms.length === 0 && <div className="p-6 text-center text-xs text-muted-foreground italic">No platforms associated.</div>}
                 </div>
-
-                {/* Add Control Footer (Grid Layout) */}
                 <div className="p-4 bg-muted/40 border-t border-border/50 space-y-3">
-                    <div className="text-[10px] font-bold uppercase text-primary/80 tracking-wider flex items-center gap-1.5">
-                        <Plus size={12} /> Add Platform
-                    </div>
-                    
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {/* Platform Select */}
                         <div className="md:col-span-2">
-                            <select
-                                value={platformToAdd}
-                                onChange={(e) => setPlatformToAdd(e.target.value)}
-                                className="w-full bg-background border border-border rounded-lg p-2.5 text-xs font-bold focus:ring-1 focus:ring-primary outline-none transition-all cursor-pointer"
-                            >
+                            <select value={platformToAdd} onChange={(e) => setPlatformToAdd(e.target.value)} className="w-full bg-background border border-border rounded-lg p-2.5 text-xs font-bold focus:ring-1 focus:ring-primary outline-none cursor-pointer">
                                 <option value="">Select Platform...</option>
-                                {availableToAdd.map(p => (
-                                    <option key={p.id} value={p.id}>{p.name}</option>
-                                ))}
-                                {platformToAdd && !availableToAdd.find(p => String(p.id) === platformToAdd) && (
-                                     <option value={platformToAdd}>{getPlatformName(Number(platformToAdd))}</option>
-                                )}
+                                {availableToAdd.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                             </select>
                         </div>
-
-                        {/* Date */}
-                        <div className="relative">
-                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground z-10 pointer-events-none">
-                                <Calendar size={12} />
-                             </span>
-                             <input 
-                                type="date"
-                                value={dateToAdd}
-                                onChange={(e) => setDateToAdd(e.target.value)}
-                                className="w-full bg-background border border-border rounded-lg py-2.5 pl-8 pr-2 text-xs font-medium focus:ring-1 focus:ring-primary outline-none"
-                            />
-                        </div>
-
-                        {/* Price */}
+                        <input type="date" value={dateToAdd} onChange={(e) => setDateToAdd(e.target.value)} className="w-full bg-background border border-border rounded-lg py-2.5 px-3 text-xs font-medium focus:ring-1 focus:ring-primary outline-none" />
                         <div className="relative">
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
-                            <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={priceToAdd}
-                                onChange={(e) => setPriceToAdd(e.target.value)}
-                                placeholder="0.00"
-                                className="w-full bg-background border border-border rounded-lg py-2.5 pl-7 pr-3 text-xs font-mono font-bold focus:ring-1 focus:ring-primary outline-none"
-                            />
+                            <input type="number" min="0" step="0.01" value={priceToAdd} onChange={(e) => setPriceToAdd(e.target.value)} placeholder="0.00" className="w-full bg-background border border-border rounded-lg py-2.5 pl-7 pr-3 text-xs font-mono font-bold focus:ring-1 focus:ring-primary outline-none" />
                         </div>
-                        
-                        {/* Add Button */}
                         <div className="md:col-span-2">
-                             <button
-                                onClick={handleAddPlatform}
-                                disabled={!platformToAdd}
-                                className="w-full py-2.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs font-bold rounded-lg disabled:opacity-50 transition-colors border border-border/50 flex items-center justify-center gap-2 active:scale-[0.98]"
-                            >
-                                <Plus size={14} /> Add Platform to Library
-                            </button>
+                             <button onClick={handleAddPlatform} disabled={!platformToAdd} className="w-full py-2.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs font-bold rounded-lg disabled:opacity-50 transition-colors border border-border/50">Add Platform</button>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        {/* Row 4: Legacy Playtime Section */}
-        <div className="space-y-2">
+        <div className="space-y-2" id="edit-legacy-input">
           <label className="text-[10px] font-bold uppercase text-primary/80 tracking-wider flex items-center gap-1.5">
             <Clock size={12} /> Historical Playtime
           </label>
-          
-          <div id="edit-legacy-input" className="bg-muted/30 border border-border rounded-xl overflow-hidden">
-              {/* List Header */}
+          <div className="bg-muted/30 border border-border rounded-xl overflow-hidden">
               {legacyEntries.length > 0 && (
                   <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-muted/50 border-b border-border text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
                         <div className="col-span-7">Source</div>
@@ -710,99 +522,51 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
                         <div className="col-span-2 text-right">Action</div>
                   </div>
               )}
-
-              {/* List Items */}
               <div className="divide-y divide-border/50">
-                  {legacyEntries.length > 0 ? legacyEntries.map((entry, idx) => (
-                      <div key={idx} className="grid grid-cols-12 gap-2 px-4 py-2 items-center text-sm hover:bg-muted/20 transition-colors">
-                          <div className="col-span-7">
-                              <div className="font-bold truncate">{entry.source}</div>
-                              {entry.platform_id && <div className="text-[9px] text-muted-foreground font-mono">ID: {entry.platform_id}</div>}
-                          </div>
-                          <div className="col-span-3 text-right font-mono text-xs">
-                              {formatLegacyTime(entry.seconds)}
-                          </div>
+                  {legacyEntries.map((entry, idx) => (
+                      <div key={idx} className="grid grid-cols-12 gap-4 px-4 py-2 items-center text-sm hover:bg-muted/20 transition-colors">
+                          <div className="col-span-7 font-bold truncate">{entry.source}</div>
+                          <div className="col-span-3 text-right font-mono text-xs">{(entry.seconds / 3600).toFixed(1)}h</div>
                           <div className="col-span-2 flex justify-end gap-1">
-                              <button 
-                                onClick={() => handleEditEntry(idx)} 
-                                className="text-muted-foreground hover:text-primary p-1.5 rounded-md hover:bg-primary/10 transition-colors"
-                                title="Edit"
-                              >
-                                  <Pencil size={14} />
-                              </button>
-                              <button 
-                                onClick={() => handleRemoveEntry(idx)} 
-                                className="text-muted-foreground hover:text-destructive p-1.5 rounded-md hover:bg-destructive/10 transition-colors"
-                                title="Remove"
-                              >
-                                  <Trash2 size={14} />
-                              </button>
+                              <button onClick={() => {
+                                  setNewSource(entry.source);
+                                  setNewHours(String(Math.floor(entry.seconds / 3600)));
+                                  setNewMinutes(String(Math.floor((entry.seconds % 3600) / 60)));
+                                  setNewSeconds(String(entry.seconds % 60));
+                                  handleRemoveLegacyEntry(idx);
+                              }} className="text-muted-foreground hover:text-primary p-1.5 rounded-md transition-colors"><Pencil size={14} /></button>
+                              <button onClick={() => handleRemoveLegacyEntry(idx)} className="text-muted-foreground hover:text-destructive p-1.5 rounded-md transition-colors"><Trash2 size={14} /></button>
                           </div>
                       </div>
-                  )) : (
-                    <div className="p-4 text-center text-xs text-muted-foreground italic">
-                        No historical playtime recorded.
-                    </div>
-                  )}
+                  ))}
+                  {legacyEntries.length === 0 && <div className="p-4 text-center text-xs text-muted-foreground italic">No historical playtime.</div>}
               </div>
-
-              {/* Add Controls */}
               <div className="bg-muted/40 border-t border-border/50 p-3 flex gap-2 items-center">
-                 <select 
-                    value={newSource} 
-                    onChange={(e) => setNewSource(e.target.value)}
-                    className="flex-1 bg-background border border-border/50 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary"
-                 >
+                 <select value={newSource} onChange={(e) => setNewSource(e.target.value)} className="flex-1 bg-background border border-border/50 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary">
                     {platformOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                  </select>
-                 <div className="flex items-center gap-1 shrink-0">
-                    <input 
-                        type="number" min="0" placeholder="0" 
-                        value={newHours} onChange={(e) => setNewHours(e.target.value)}
-                        className="w-12 bg-background border border-border/50 rounded-lg px-1 py-1.5 text-xs text-center outline-none focus:border-primary/50"
-                    />
-                    <span className="text-[10px] text-muted-foreground font-bold">H</span>
-                 </div>
-                 <div className="flex items-center gap-1 shrink-0">
-                    <input 
-                        type="number" min="0" max="59" placeholder="0" 
-                        value={newMinutes} onChange={(e) => setNewMinutes(e.target.value)}
-                        className="w-12 bg-background border border-border/50 rounded-lg px-1 py-1.5 text-xs text-center outline-none focus:border-primary/50"
-                    />
-                    <span className="text-[10px] text-muted-foreground font-bold">M</span>
-                 </div>
-                 <div className="flex items-center gap-1 shrink-0">
-                    <input 
-                        type="number" min="0" max="59" placeholder="0" 
-                        value={newSeconds} onChange={(e) => setNewSeconds(e.target.value)}
-                        className="w-12 bg-background border border-border/50 rounded-lg px-1 py-1.5 text-xs text-center outline-none focus:border-primary/50"
-                    />
-                    <span className="text-[10px] text-muted-foreground font-bold">S</span>
-                 </div>
-                 <button 
-                    onClick={handleAddEntry}
-                    disabled={!newHours && !newMinutes && !newSeconds}
-                    className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-lg transition-colors border border-border/50 disabled:opacity-50"
-                 >
-                    <Plus size={16} />
-                 </button>
+                 <input type="number" min="0" placeholder="H" value={newHours} onChange={(e) => setNewHours(e.target.value)} className="w-12 bg-background border border-border/50 rounded-lg px-1 py-1.5 text-xs text-center outline-none" />
+                 <input type="number" min="0" max="59" placeholder="M" value={newMinutes} onChange={(e) => setNewMinutes(e.target.value)} className="w-12 bg-background border border-border/50 rounded-lg px-1 py-1.5 text-xs text-center outline-none" />
+                 <button onClick={handleAddEntry} disabled={!newHours && !newMinutes} className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-lg transition-colors border border-border/50"><Plus size={16} /></button>
               </div>
           </div>
         </div>
 
-        {/* Save Actions */}
         <div className="flex justify-end pt-4 border-t border-border/50">
           <button 
             id="edit-modal-save"
             onClick={handleSave}
             disabled={isSaving}
-            className="w-full py-3 bg-primary text-primary-foreground font-bold rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-all shadow-lg active:scale-95 disabled:opacity-50"
+            className="w-full py-3 bg-primary text-primary-foreground font-bold rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-all shadow-lg disabled:opacity-50"
           >
             <Save size={18} /> {isSaving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
-
       </div>
     </Modal>
   );
+
+  function handleRemoveLegacyEntry(index: number) {
+    setLegacyEntries(prev => prev.filter((_, i) => i !== index));
+  }
 }

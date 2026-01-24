@@ -1,4 +1,3 @@
-
 export interface ReviewMetadata {
   method: 'CRITICAL' | 'CASUAL';
   genre_template: string;
@@ -42,6 +41,7 @@ export interface GamesTable {
   xbox_store_id: string | null;
   xbox_market_id: string | null;
   dlcs: string | null; // JSON
+  local_cover_path: string | null;
 }
 
 export interface LibraryTable {
@@ -134,6 +134,17 @@ export interface SystemMetaTable {
   value: string;
 }
 
+export interface TagsTable {
+  id: number;
+  name: string;
+  color: string | null;
+}
+
+export interface GameLibraryTagsTable {
+  game_id: string;
+  tag_id: number;
+}
+
 export interface Database {
   games: GamesTable;
   library: LibraryTable;
@@ -146,4 +157,6 @@ export interface Database {
   linked_accounts: LinkedAccountsTable;
   game_tags: GameTagsTable;
   system_meta: SystemMetaTable;
+  tags: TagsTable;
+  game_library_tags: GameLibraryTagsTable;
 }

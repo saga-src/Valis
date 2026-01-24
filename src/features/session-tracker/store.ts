@@ -1,4 +1,3 @@
-
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -38,7 +37,7 @@ export const useSessionStore = create<SessionState>()(
     (set, get) => ({
       activeSession: null,
       lastUpdate: Date.now(),
-      draft: { mood: '🤩', notes: [], journal: '', platformId: 0 },
+      draft: { mood: '😶', notes: [], journal: '', platformId: 0 },
 
       startTimer: async (gameId, gameTitle, coverUrl, platformId, startTime, existingSessionId) => {
         const start = startTime ?? Date.now();
@@ -115,7 +114,7 @@ export const useSessionStore = create<SessionState>()(
         draft: { ...state.draft, platformId }
       })),
 
-      clearDraft: () => set({ draft: { mood: '🤩', notes: [], journal: '', platformId: 0 } }),
+      clearDraft: () => set({ draft: { mood: '😶', notes: [], journal: '', platformId: 0 } }),
     }),
     {
       name: 'valis-session-storage',

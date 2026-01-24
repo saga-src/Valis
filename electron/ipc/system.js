@@ -1,4 +1,3 @@
-
 import { ipcMain, Notification, app } from 'electron';
 import { handleImportSessions, handleExportSessions } from '../lib/excel.js';
 import FactoryResetService from '../services/FactoryResetService.js';
@@ -15,6 +14,7 @@ const ALL_USER_TABLES = [
   'achievements',         // FK -> games
   'sessions',             // FK -> games
   'game_tags',            // FK -> games
+  'game_library_tags',    // FK -> games, tags
   'library_platforms',    // FK -> games
   'library',              // FK -> games
   'unlocked_tiers',
@@ -23,6 +23,7 @@ const ALL_USER_TABLES = [
   'linked_accounts',      // Critical: Auth tokens
   'watch_paths',
   'settings',
+  'tags',                 // Parent of game_library_tags
   'games'                 // Parent
 ];
 
@@ -108,6 +109,23 @@ export function registerSystemHandlers() {
       .onConflict((oc) => oc.column('key').doUpdateSet({ value }))
       .execute();
     return { success: true };
+  });
+
+  // Generic Meta Handlers
+  ipcMain.handle('get-meta', async (event, key) => {
+    const row = await db.selectFrom('system_meta')
+      .select('value')
+      .where('key', '=', key)
+      .executeTakeFirst();
+    return row ? row.value : null;
+  });
+
+  ipcMain.handle('set-meta', async (event, key, value) => {
+    await db.insertInto('system_meta')
+      .values({ key, value })
+      .onConflict(oc => oc.column('key').doUpdateSet({ value }))
+      .execute();
+    return true;
   });
 
   // 1. Full Database Dump (Backup / Sync Upload)

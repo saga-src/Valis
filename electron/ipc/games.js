@@ -1,4 +1,7 @@
 import { ipcMain, dialog } from 'electron';
+import { spawn } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 import * as db from '../db/queries.js';
 import * as igdb from '../lib/igdb.js';
 import { cloudGate } from '../services/CloudGate.js';
@@ -18,8 +21,6 @@ const broadcastLibraryUpdate = (event) => {
 const triggerAutoScrape = async (event, game, result) => {
     if (result && result.success) {
         // ⚡ RE-FETCH FROM DB 
-        // This ensures we have the final 'psn_id', 'psn_trophy_id', 'xbox_store_id' as saved in the database.
-        // The input 'game' object might have been incomplete.
         const gameId = result.id || game.id;
         const savedGame = await db.getGameById(gameId);
         
@@ -109,10 +110,10 @@ export function registerGameHandlers() {
   });
   
   // File Picker Handler
-  ipcMain.handle('dialog:open-executable-file', async () => {
+  ipcMain.handle('dialog:open-file', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
-      filters: [{ name: 'Executables', extensions: ['exe', 'lnk'] }]
+      filters: [{ name: 'Executables', extensions: ['exe'] }]
     });
     if (canceled) return null;
     return filePaths[0]; 
@@ -163,5 +164,46 @@ export function registerGameHandlers() {
   // Achievements
   ipcMain.handle('get-game-achievements', async (event, gameId) => {
     return await db.getAchievements(gameId);
+  });
+
+  // Launcher
+  ipcMain.handle('launch-game', async (event, gameId) => {
+    console.log(`[Launch Debug] Request received for game ID: ${gameId}`);
+    try {
+      const game = await db.getGameById(gameId);
+      if (!game || !game.executable) {
+        console.error(`[Launch Error] No executable found for game ID: ${gameId}`);
+        throw new Error('No executable linked for this game');
+      }
+
+      const exePath = game.executable;
+      console.log(`[Launch Debug] Found exe path: ${exePath}`);
+
+      if (!fs.existsSync(exePath)) {
+        console.error(`[Launch Error] Path does not exist on disk: ${exePath}`);
+        throw new Error(`File not found: ${exePath}`);
+      }
+
+      console.log(`[Launch Debug] Spawning process...`);
+      const child = spawn(exePath, [], {
+        detached: true,
+        stdio: 'ignore',
+        cwd: path.dirname(exePath)
+      });
+
+      child.on('error', (err) => {
+        console.error('[Launch Error] Spawn failed:', err);
+      });
+
+      child.on('spawn', () => {
+        console.log('[Launch Debug] Process spawned successfully with PID:', child.pid);
+      });
+
+      child.unref();
+      return { success: true };
+    } catch (error) {
+      console.error('[Launch Error] Catch-all:', error);
+      return { success: false, error: error.message };
+    }
   });
 }

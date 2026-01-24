@@ -1,8 +1,8 @@
-
 export interface StorageApi {
   saveGame: (game: any) => Promise<any>;
   addGame: (game: any) => Promise<any>;
   getLibrary: () => Promise<any[]>;
+  // Add getAnalyticsData to StorageApi interface
   getAnalyticsData: () => Promise<any[]>;
   updateGame: (game: any) => Promise<any>;
   deleteGame: (gameId: string) => Promise<boolean>;
@@ -19,6 +19,7 @@ export interface StorageApi {
   importSessionsExcel: () => Promise<{ success: boolean; count?: number; gamesCount?: number; message?: string }>;
   exportSessionsExcel: () => Promise<{ success: boolean; message?: string }>;
   selectExecutable: () => Promise<string | null>;
+  openFileDialog: () => Promise<string | null>;
   updateWatcherSettings: (settings: { enabled: boolean; interval: number }) => Promise<boolean>;
   onSessionStarted: (callback: (data: { gameId: string; startTime: number; sessionId?: string }) => void) => () => void;
   onSessionEnded: (callback: (data: { gameId: string; duration: number }) => void) => () => void;
@@ -52,6 +53,7 @@ export interface StorageApi {
   onAppClosing: (callback: () => void) => () => void;
   sendReadyToQuit: () => void;
   getDatabaseFile: () => Promise<Uint8Array>;
+  launchGame: (gameId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 export const saveGame = async (game: any) => {
@@ -139,9 +141,14 @@ export const exportSessionsExcel = async () => {
   return await window.api.exportSessionsExcel();
 };
 
+export const openFileDialog = async () => {
+  if (!window.api) return null;
+  return await window.api.openFileDialog();
+};
+
 export const selectExecutable = async () => {
   if (!window.api) return null;
-  return await window.api.selectExecutable();
+  return await window.api.openFileDialog();
 };
 
 export const updateWatcherSettings = async (settings: { enabled: boolean; interval: number }) => {
@@ -256,4 +263,9 @@ export const sendReadyToQuit = () => {
 export const getDatabaseFile = async () => {
     if (!window.api) return new Uint8Array();
     return await window.api.getDatabaseFile();
+};
+
+export const launchGame = async (gameId: string) => {
+  if (!window.api) return { success: false, error: 'API not available' };
+  return await window.api.launchGame(gameId);
 };

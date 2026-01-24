@@ -1,4 +1,3 @@
-
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
@@ -10,10 +9,20 @@ contextBridge.exposeInMainWorld('api', {
   getGameById: (id) => ipcRenderer.invoke('get-game-by-id', id),
   updateGame: (game) => ipcRenderer.invoke('db:update-game', game),
   deleteGame: (gameId) => ipcRenderer.invoke('db:delete-game', gameId),
+  launchGame: (gameId) => ipcRenderer.invoke('launch-game', gameId),
   
-  // Tags
+  // Tags (Usage stats)
   getGameTags: (gameId) => ipcRenderer.invoke('get-game-tags', gameId),
   getAllTags: () => ipcRenderer.invoke('get-all-tags'),
+
+  // Tags System (v1.1.0)
+  getTags: () => ipcRenderer.invoke('tags:get'),
+  createTag: (name, color) => ipcRenderer.invoke('tags:create', { name, color }),
+  updateTag: (id, name, color) => ipcRenderer.invoke('tags:update', { id, name, color }),
+  deleteTag: (id) => ipcRenderer.invoke('tags:delete', id),
+  tagGame: (gameId, tagId) => ipcRenderer.invoke('tags:tag-game', { gameId, tagId }),
+  untagGame: (gameId, tagId) => ipcRenderer.invoke('tags:untag-game', { gameId, tagId }),
+  setGameTags: (gameId, tagIds) => ipcRenderer.invoke('tags:set-game-tags', { gameId, tagIds }),
 
   // Sessions
   getSessions: (gameId) => ipcRenderer.invoke('db:get-sessions', gameId),
@@ -83,6 +92,8 @@ contextBridge.exposeInMainWorld('api', {
   // System Metadata
   getSystemMeta: () => ipcRenderer.invoke('system:get-meta'),
   setSystemMeta: (key, value) => ipcRenderer.invoke('system:set-meta', key, value),
+  getMeta: (key) => ipcRenderer.invoke('get-meta', key),
+  setMeta: (key, value) => ipcRenderer.invoke('set-meta', key, value),
   restoreBackup: (data) => ipcRenderer.invoke('system:restore-backup', data),
   getDatabaseDump: () => ipcRenderer.invoke('system:get-database-dump'),
   getDatabaseFile: () => ipcRenderer.invoke('get-database-file'),
@@ -127,7 +138,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Updater
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
-  startDownload: () => ipcRenderer.invoke('update:start-download'),
+  startDownload: () => ipcRenderer.invoke('update:check'), // Fixed duplicate call
   quitAndInstall: () => ipcRenderer.invoke('update:quit-and-install'),
   onUpdateAvailable: (callback) => {
     const subscription = (_, info) => callback(info);
@@ -155,7 +166,8 @@ contextBridge.exposeInMainWorld('api', {
   toggleStartup: (enabled) => ipcRenderer.invoke('system:toggle-startup', enabled),
 
   // Executable Linking
-  selectExecutable: () => ipcRenderer.invoke('dialog:select-executable'),
+  openFileDialog: () => ipcRenderer.invoke('dialog:open-file'),
+  selectExecutable: () => ipcRenderer.invoke('dialog:open-file'), // Keep alias for compat
   updateWatcherSettings: (settings) => ipcRenderer.invoke('watcher:update-settings', settings),
 
   // Watcher Events

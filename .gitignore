@@ -52,6 +52,7 @@ logs
 *.njsproj
 *.sln
 *.sw?
+.vscode/
 
 # --- Supabase / Cloud Functions ---
 supabase/.temp/

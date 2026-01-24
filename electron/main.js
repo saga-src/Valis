@@ -12,6 +12,7 @@ import { setupAchievementsHandlers } from './ipc/achievements.js';
 import { registerSettingsHandlers } from './ipc/settings.js';
 import { registerGamificationHandlers } from './ipc/gamification.js'; // NEW
 import { registerImageHandlers } from './ipc/images.js'; // NEW
+import { registerTagHandlers } from './ipc/tags.js'; // NEW v1.1.0
 import { gameWatcher } from './services/ProcessWatcher.js';
 import { achievementWatcher } from './services/FileWatcherService.js';
 import * as igdb from './lib/igdb.js';
@@ -280,7 +281,8 @@ if (!gotTheLock) {
     setupAchievementsHandlers(mainWindow);
     registerSettingsHandlers();
     registerGamificationHandlers(); 
-    registerImageHandlers(); // Register new image handler
+    registerImageHandlers(); 
+    registerTagHandlers(); // v1.1.0
     registerLegacyHandlers();
 
     gameWatcher.start(mainWindow, 5000);

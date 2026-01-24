@@ -1,8 +1,13 @@
-
 export interface Platform {
   id: number;
   name: string;
   abbreviation?: string;
+}
+
+export interface Tag {
+  id: number;
+  name: string;
+  color: string;
 }
 
 export interface PlatformOwnership {
@@ -19,6 +24,7 @@ export interface Game {
   status: string;
   rating?: number;
   first_release_date?: number;
+  tags?: Tag[];
   [key: string]: any;
 }
 

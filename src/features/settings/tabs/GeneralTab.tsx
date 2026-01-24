@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Zap, MousePointerClick, MonitorUp, Rocket } from 'lucide-react';
-import { useSettings } from '../useSettings';
+import { Zap, MousePointerClick, MonitorUp, Rocket, Eye, Play, Rocket as RocketIcon } from 'lucide-react';
+import { useSettings, InteractionAction } from '../useSettings';
 import { cn } from '../../../lib/utils/cn';
 import { getSetting, saveSetting } from '../../../lib/storage';
 
 export const GeneralTab = () => {
   const { 
     autoTrackingEnabled, autoTrackingInterval, setAutoTracking,
-    libraryAction, setLibraryAction,
+    coverClickAction, setCoverClickAction,
+    hoverButtonAction, setHoverButtonAction,
     startAtLogin, setStartAtLogin
   } = useSettings();
 
@@ -35,8 +36,6 @@ export const GeneralTab = () => {
     setLibraryCacheEnabled(val); // Instant feedback
     saveSetting('enable_library_cache', val).catch(e => {
         console.error('[Settings] Failed to save cache setting:', e);
-        // Optional: revert state if save fails
-        // setLibraryCacheEnabled(!val);
     });
   };
 
@@ -45,6 +44,31 @@ export const GeneralTab = () => {
         <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="sr-only peer" />
         <div className="w-11 h-6 bg-muted peer-focus:outline-none rounded-full peer peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
     </label>
+  );
+
+  const InteractionOption = ({ 
+    active, 
+    onClick, 
+    icon: Icon, 
+    label 
+  }: { 
+    active: boolean; 
+    onClick: () => void; 
+    icon: any; 
+    label: string 
+  }) => (
+    <button 
+      onClick={onClick} 
+      className={cn(
+        "flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all border",
+        active 
+          ? "bg-primary text-primary-foreground border-primary shadow-sm" 
+          : "bg-background hover:bg-muted text-muted-foreground border-border"
+      )}
+    >
+      <Icon size={12} fill={active ? "currentColor" : "none"} />
+      {label}
+    </button>
   );
 
   return (
@@ -124,14 +148,60 @@ export const GeneralTab = () => {
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <MousePointerClick size={20} className="text-primary" /> Library Interaction
         </h2>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-                <p className="font-bold text-sm">Default Click Action</p>
-                <p className="text-xs text-muted-foreground">Behavior when clicking a game cover in the library.</p>
+        
+        <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <p className="font-bold text-sm">On Cover Click</p>
+                    <p className="text-xs text-muted-foreground">Primary action when clicking a game card.</p>
+                </div>
+                <div className="flex gap-2 bg-muted/30 p-1 rounded-xl border border-border">
+                    <InteractionOption 
+                        active={coverClickAction === 'details'} 
+                        onClick={() => setCoverClickAction('details')} 
+                        icon={Eye} 
+                        label="Details" 
+                    />
+                    <InteractionOption 
+                        active={coverClickAction === 'quickplay'} 
+                        onClick={() => setCoverClickAction('quickplay')} 
+                        icon={Play} 
+                        label="QuickPlay" 
+                    />
+                    <InteractionOption 
+                        active={coverClickAction === 'launch'} 
+                        onClick={() => setCoverClickAction('launch')} 
+                        icon={RocketIcon} 
+                        label="Launch" 
+                    />
+                </div>
             </div>
-            <div className="flex bg-muted p-1 rounded-lg">
-                <button onClick={() => setLibraryAction('details')} className={cn("px-4 py-2 text-xs font-bold rounded-md transition-all", libraryAction === 'details' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>View Details</button>
-                <button onClick={() => setLibraryAction('play')} className={cn("px-4 py-2 text-xs font-bold rounded-md transition-all", libraryAction === 'play' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>Quick Play</button>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
+                <div>
+                    <p className="font-bold text-sm">On Hover Button</p>
+                    <p className="text-xs text-muted-foreground">Secondary action button revealed on hover.</p>
+                </div>
+                <div className="flex gap-2 bg-muted/30 p-1 rounded-xl border border-border">
+                    <InteractionOption 
+                        active={hoverButtonAction === 'details'} 
+                        onClick={() => setHoverButtonAction('details')} 
+                        icon={Eye} 
+                        label="Details" 
+                    />
+                    <InteractionOption 
+                        active={hoverButtonAction === 'quickplay'} 
+                        onClick={() => setHoverButtonAction('quickplay')} 
+                        icon={Play} 
+                        label="QuickPlay" 
+                    />
+                    <InteractionOption 
+                        active={hoverButtonAction === 'launch'} 
+                        onClick={() => setHoverButtonAction('launch')} 
+                        icon={RocketIcon} 
+                        label="Launch" 
+                    />
+                </div>
             </div>
         </div>
       </div>

@@ -3,12 +3,16 @@ import { getSetting, saveSetting } from '../../lib/storage';
 import { useToast } from '../../context/ToastContext';
 
 type LibraryAction = 'details' | 'play';
+export type InteractionAction = 'details' | 'quickplay' | 'launch';
 
 export const useSettings = () => {
   const { toast } = useToast();
 
   // Local State
   const [libraryAction, setLibraryActionState] = useState<LibraryAction>('details');
+  const [coverClickAction, setCoverClickActionState] = useState<InteractionAction>('details');
+  const [hoverButtonAction, setHoverButtonActionState] = useState<InteractionAction>('quickplay');
+  
   const [healthCheckEnabled, setHealthCheckEnabledState] = useState(true);
   const [healthThreshold, setHealthThresholdState] = useState(120);
   const [healthSound, setHealthSoundState] = useState(true);
@@ -50,13 +54,15 @@ export const useSettings = () => {
       setIsLoading(true);
       try {
         const [
-          la, hc, ht, hs, hto, sd, ate, ati, mm, es, at, as,
+          la, cca, hba, hc, ht, hs, hto, sd, ate, ati, mm, es, at, as,
           mt, ms, // Milestones
           pt, ps, // Protocols
           hCpu, hGpu, hRam,
           startupStatus
         ] = await Promise.all([
           getSetting('library_action'),
+          getSetting('cover_click_action'),
+          getSetting('hover_button_action'),
           getSetting('health_enabled'),
           getSetting('health_threshold'),
           getSetting('health_sound'),
@@ -79,6 +85,9 @@ export const useSettings = () => {
         ]);
 
         if (la) setLibraryActionState(la);
+        if (cca) setCoverClickActionState(cca);
+        if (hba) setHoverButtonActionState(hba);
+        
         if (hc !== null) setHealthCheckEnabledState(hc);
         if (ht) setHealthThresholdState(ht);
         if (hs !== null) setHealthSoundState(hs);
@@ -119,6 +128,16 @@ export const useSettings = () => {
   const setLibraryAction = (action: LibraryAction) => {
     setLibraryActionState(action);
     updateSqlSetting('library_action', action);
+  };
+
+  const setCoverClickAction = (action: InteractionAction) => {
+    setCoverClickActionState(action);
+    updateSqlSetting('cover_click_action', action);
+  };
+
+  const setHoverButtonAction = (action: InteractionAction) => {
+    setHoverButtonActionState(action);
+    updateSqlSetting('hover_button_action', action);
   };
 
   const setHealthCheckEnabled = (enabled: boolean) => {
@@ -231,6 +250,8 @@ export const useSettings = () => {
 
   return { 
     libraryAction, setLibraryAction,
+    coverClickAction, setCoverClickAction,
+    hoverButtonAction, setHoverButtonAction,
     healthCheckEnabled, setHealthCheckEnabled,
     healthThreshold, setHealthThreshold,
     healthSound, setHealthSound,

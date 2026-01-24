@@ -1,13 +1,14 @@
 import React from 'react';
 // Fix: Import Link and useNavigate from local shim index file to avoid casing conflict with App.tsx
 import { Link, useNavigate } from '../../../app/index';
-import { Play, Info, Star, Globe } from 'lucide-react';
+import { Play, Info, Star, Globe, Eye, Rocket } from 'lucide-react';
 import { formatCardTime, getTotalPlaytimeSeconds } from '../../../lib/utils/format';
 import { cn } from '../../../lib/utils/cn';
 import { LibrarySettings } from '../hooks/useLibrarySettings';
 import { getStatusColorVar } from '../utils/libraryUtils';
-import { useSettings } from '../../settings/useSettings';
+import { useSettings, InteractionAction } from '../../settings/useSettings';
 import { useMarkObserver } from '../../gamification/hooks/useMarkObserver';
+import { useToast } from '../../../context/ToastContext';
 
 interface GameCardProps {
   game: any;
@@ -34,16 +35,13 @@ const getStatusIndicator = (status: string, isStealth: boolean) => {
 export const GameCard: React.FC<GameCardProps> = ({ 
     game, 
     settings, 
-    libraryAction, 
     theme 
 }) => {
   const navigate = useNavigate();
-  const { museumMode } = useSettings();
+  const { toast } = useToast();
+  const { museumMode, coverClickAction, hoverButtonAction } = useSettings();
   const { reportSignal } = useMarkObserver();
 
-  const primaryPath = libraryAction === 'details' ? `/game/${game.id}` : `/play`;
-  const linkState = libraryAction === 'play' ? { gameId: game.id } : undefined;
-  
   const totalSeconds = getTotalPlaytimeSeconds(game);
   const statusColor = getStatusColorVar(game.status);
   const isStealth = theme === 'stealth';
@@ -55,29 +53,79 @@ export const GameCard: React.FC<GameCardProps> = ({
     reportSignal('GAME_CARD_CLICK', game.id);
   };
 
+  // --- INTERACTION LOGIC ---
+  const handleLaunch = async () => {
+    if (!game.executable) {
+      toast.error('No executable linked for this game.');
+      return;
+    }
+    
+    if (window.api && window.api.launchGame) {
+      const res = await window.api.launchGame(game.id);
+      if (res.success) {
+        toast.success(`Launching ${game.name || game.title}...`);
+        reportSignal('GAME_LAUNCH');
+      } else {
+        toast.error(`Launch failed: ${res.error}`);
+      }
+    }
+  };
+
+  const getResolvedAction = (action: InteractionAction): InteractionAction => {
+    if (action === 'launch' && !game.executable) {
+        // Fallback Logic
+        const other = action === coverClickAction ? hoverButtonAction : coverClickAction;
+        if (other === 'details') return 'quickplay';
+        return 'details';
+    }
+    return action;
+  };
+
+  const performAction = (action: InteractionAction) => {
+    const resolved = getResolvedAction(action);
+    
+    switch (resolved) {
+      case 'details':
+        navigate(`/game/${game.id}`);
+        break;
+      case 'quickplay':
+        navigate('/play', { state: { gameId: game.id } });
+        break;
+      case 'launch':
+        handleLaunch();
+        break;
+    }
+  };
+
+  const ActionIcon = ({ action, size = 18 }: { action: InteractionAction, size?: number }) => {
+    const resolved = getResolvedAction(action);
+    switch (resolved) {
+      case 'details': return <Eye size={size} />;
+      case 'quickplay': return <Play size={size} fill="currentColor" />;
+      case 'launch': return <Rocket size={size} />;
+    }
+  };
+
   // --- RATING LOGIC ---
-  // Prioritize user_rating (or final_score as fallback for detailed reviews), then global rating
   const userScore = game.user_rating ?? game.final_score;
   const globalScore = Math.round(game.rating || 0);
-
   const hasUserScore = typeof userScore === 'number' && userScore > 0;
   const hasGlobalScore = globalScore > 0;
-  
   const showBadge = settings.showRating && (hasUserScore || hasGlobalScore);
 
-  // 1. Logic: DB Path (Priority) -> Web URL (Fallback)
-  // Ensure we prepend file:// if it's a local path
   const coverSrc = game.local_cover_path 
     ? `file://${game.local_cover_path}` 
     : game.cover_url;
 
   return (
-    <Link
-      to={primaryPath}
-      state={linkState}
-      onClick={handleClick}
+    <div
+      onClick={(e) => {
+          e.preventDefault();
+          handleClick();
+          performAction(coverClickAction);
+      }}
       className={cn(
-        "group relative flex flex-col overflow-hidden transition-all duration-300 h-full border text-card-foreground",
+        "group relative flex flex-col overflow-hidden transition-all duration-300 h-full border text-card-foreground cursor-pointer",
         "border-border/40 hover:border-primary/50 bg-background hover:shadow-xl",
         museumMode ? "rounded-none museum-card" : "rounded-xl"
       )}
@@ -89,7 +137,6 @@ export const GameCard: React.FC<GameCardProps> = ({
           className="h-full w-full object-cover transition-all duration-700 ease-out group-hover:scale-110"
           loading="lazy"
           decoding="async"
-          // 3. Final Safety Net: If local file fails (moved/deleted), revert to web URL
           onError={(e) => {
              const target = e.target as HTMLImageElement;
              if (game.cover_url && target.src !== game.cover_url) {
@@ -98,7 +145,6 @@ export const GameCard: React.FC<GameCardProps> = ({
           }}
         />
         
-        {/* ⚡ High-Visibility Refractive Layer (Museum Mode) */}
         {museumMode && (
           <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/25 to-white/0 opacity-60 transform -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out" />
@@ -106,7 +152,6 @@ export const GameCard: React.FC<GameCardProps> = ({
           </div>
         )}
         
-        {/* Glossy reflection effect (Legacy/Default) */}
         {!museumMode && <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-white/5 opacity-40 pointer-events-none" />}
         
         <div 
@@ -166,21 +211,14 @@ export const GameCard: React.FC<GameCardProps> = ({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              const target = libraryAction === 'details' ? '/play' : `/game/${game.id}`;
-              const state = libraryAction === 'details' ? { gameId: game.id } : undefined;
-              navigate(target, { state });
+              performAction(hoverButtonAction);
             }}
             className={cn(
               "pointer-events-auto transform translate-y-4 group-hover:translate-y-0 h-9 w-9 bg-primary text-primary-foreground shadow-2xl transition-all duration-300 hover:scale-110 active:scale-90 flex items-center justify-center border border-white/20",
               museumMode ? "rounded-none" : "rounded-full"
             )}
-            title={libraryAction === 'details' ? "Play" : "View Details"}
           >
-            {libraryAction === 'details' ? (
-                <Play size={18} fill="currentColor" className="text-white ml-0.5" />
-            ) : (
-                <Info size={20} strokeWidth={2.5} />
-            )}
+            <ActionIcon action={hoverButtonAction} />
           </button>
         </div>
       </div>
@@ -213,6 +251,6 @@ export const GameCard: React.FC<GameCardProps> = ({
             )}
         </div>
       </div>
-    </Link>
+    </div>
   );
 };

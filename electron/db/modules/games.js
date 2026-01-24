@@ -1,4 +1,3 @@
-
 import { db, rawDb } from '../client.js';
 import crypto from 'crypto';
 import { fetchIGDBMetadata } from '../../lib/igdb.js';
@@ -42,8 +41,6 @@ export async function recalculatePlaytime(gameId) {
 }
 
 export async function getLibrary() {
-  // FIX: Reordered to SELECT l.*, g.* to ensure g.rating (IGDB) wins over l.rating (User)
-  // We explicitly alias l.rating to user_rating so we keep both.
   const rows = rawDb.prepare(`
     SELECT 
       l.*,
@@ -52,9 +49,16 @@ export async function getLibrary() {
       g.name as title,
       (SELECT GROUP_CONCAT(COALESCE(store_id, platform_id)) FROM library_platforms WHERE game_id = g.id) as platform_string,
       (SELECT SUM(acquired_price) FROM library_platforms WHERE game_id = g.id) as acquired_price,
-      l.executable_path as executable
+      l.executable_path as executable,
+      COALESCE((
+        SELECT json_group_array(json_object('id', t.id, 'name', t.name, 'color', t.color))
+        FROM game_library_tags gtr
+        JOIN tags t ON t.id = gtr.tag_id
+        WHERE gtr.game_id = g.id
+      ), '[]') as tags_json
     FROM games g
     INNER JOIN library l ON g.id = l.game_id
+    GROUP BY g.id
     ORDER BY l.added_at DESC
   `).all();
 
@@ -62,12 +66,12 @@ export async function getLibrary() {
     ...r,
     owned_platform_ids: JSON.stringify(r.platform_string ? r.platform_string.split(',').map(Number) : []),
     // ⚡ Return structured legacy data
-    legacy_playtime_seconds: normalizeLegacyPlaytime(r.legacy_playtime_seconds)
+    legacy_playtime_seconds: normalizeLegacyPlaytime(r.legacy_playtime_seconds),
+    tags: JSON.parse(r.tags_json || '[]')
   }));
 }
 
 export async function getAnalyticsData() {
-  // FIX: Same reorder here to ensure consistency if analytics uses ratings later
   const rows = rawDb.prepare(`
     SELECT 
       l.*,
@@ -93,14 +97,19 @@ export async function getAnalyticsData() {
 }
 
 export async function getGameById(id) {
-  // FIX: Reordered to SELECT l.*, g.*
   const row = rawDb.prepare(`
     SELECT 
       l.*, 
       g.*, 
       l.rating as user_rating,
       g.name as title,
-      l.executable_path as executable
+      l.executable_path as executable,
+      COALESCE((
+        SELECT json_group_array(json_object('id', t.id, 'name', t.name, 'color', t.color))
+        FROM game_library_tags gtr
+        JOIN tags t ON t.id = gtr.tag_id
+        WHERE gtr.game_id = g.id
+      ), '[]') as tags_json
     FROM games g
     LEFT JOIN library l ON g.id = l.game_id
     WHERE g.id = ?
@@ -137,7 +146,8 @@ export async function getGameById(id) {
     dlcs: row.dlcs ? JSON.parse(row.dlcs) : [],
     linked_dlcs: linkedDlcs,
     // ⚡ Return structured legacy data
-    legacy_playtime_seconds: normalizeLegacyPlaytime(row.legacy_playtime_seconds)
+    legacy_playtime_seconds: normalizeLegacyPlaytime(row.legacy_playtime_seconds),
+    tags: JSON.parse(row.tags_json || '[]')
   };
 }
 

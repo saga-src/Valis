@@ -1,23 +1,34 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 // Fix: Import useNavigate from local shim index file to avoid casing conflict with App.tsx
 import { useNavigate } from '../../app/index';
 import { useSessionManager } from './useSessionManager'; // Updated import
 import { CUSTOM_PLATFORM_DATA, CUSTOM_PLATFORMS, PlatformOwnership } from '../../types/index';
-import { Play, Tag, BookOpen, Clock, Gamepad2, Square } from 'lucide-react';
+import { Play, Tag, BookOpen, Clock, Gamepad2, Square, Rocket } from 'lucide-react';
 import { getSessions, getGameTags } from '../../lib/storage';
 import { System } from '../../lib/api';
 import { useMarkObserver } from '../gamification/hooks/useMarkObserver';
+import { useToast } from '../../context/ToastContext';
+import { cn } from '../../lib/utils/cn';
 
 interface SessionControlPanelProps {
   game: any;
   history?: any[]; // Optional to allow internal fetching if not provided
 }
 
-const MOODS = ['🤩', '🙂', '😐', '😴', '😡', '😭'];
+const MOODS = ['😶', '🤩', '🙂', '😐', '😴', '😡', '😭'];
+const MOOD_LABELS: Record<string, string> = {
+  '😶': 'No Emotion',
+  '🤩': 'Amazing',
+  '🙂': 'Good',
+  '😐': 'Average',
+  '😴': 'Boring',
+  '😡': 'Frustrating',
+  '😭': 'Sad'
+};
 
 export const SessionControlPanel: React.FC<SessionControlPanelProps> = ({ game, history: propHistory }) => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const { reportSignal } = useMarkObserver();
   
   // Use Manager Hook (This ensures stopTimer broadcasts events)
@@ -132,6 +143,19 @@ export const SessionControlPanel: React.FC<SessionControlPanelProps> = ({ game, 
     startTimer(String(game.id), game.title || game.name, game.cover_url, selectedPlatformId);
   };
 
+  const handleLaunch = async () => {
+    if (!game.executable) return;
+    if (window.api && window.api.launchGame) {
+      const res = await window.api.launchGame(game.id);
+      if (res.success) {
+        toast.success(`Launching ${game.title || game.name}...`);
+        reportSignal('GAME_LAUNCH');
+      } else {
+        toast.error(`Launch failed: ${res.error}`);
+      }
+    }
+  };
+
   const getPlatformName = (id: number) => {
     if (CUSTOM_PLATFORM_DATA[id]) return CUSTOM_PLATFORM_DATA[id].name;
     try {
@@ -149,18 +173,33 @@ export const SessionControlPanel: React.FC<SessionControlPanelProps> = ({ game, 
       
       {/* Header */}
       <div className="mb-6 border-b border-border/50 pb-4">
-        <h3 className="text-lg font-bold flex items-center gap-2">
-          {isSessionActive ? (
-            <span className="flex items-center gap-2 text-red-500 animate-pulse">
-                <div className="w-2.5 h-2.5 bg-red-500 rounded-full" />
-                Recording Session
-            </span>
-          ) : (
-            <span className="flex items-center gap-2">
-                <Play size={20} className="text-primary" /> New Session
-            </span>
-          )}
-        </h3>
+        <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+                {isSessionActive ? (
+                    <span className="flex items-center gap-2 text-red-500 animate-pulse">
+                        <div className="w-2.5 h-2.5 bg-red-500 rounded-full" />
+                        Recording Session
+                    </span>
+                ) : (
+                    <span className="flex items-center gap-2">
+                        <Play size={20} className="text-primary" /> New Session
+                    </span>
+                )}
+            </h3>
+            {game.executable && (
+                <button
+                    onClick={handleLaunch}
+                    disabled={isSessionActive}
+                    title={isSessionActive ? "Game is already running" : "Launch Game"}
+                    className={cn(
+                        "flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                        isSessionActive ? "opacity-50 cursor-not-allowed grayscale" : "hover:bg-emerald-500/20"
+                    )}
+                >
+                    <Rocket size={14} /> Launch Game
+                </button>
+            )}
+        </div>
         <p className="text-xs text-muted-foreground mt-1 pl-7">
           {isSessionActive ? 'Timer is running... Good luck!' : 'Configure your session details below.'}
         </p>
@@ -200,7 +239,7 @@ export const SessionControlPanel: React.FC<SessionControlPanelProps> = ({ game, 
                       key={m}
                       onClick={() => handleMoodSelect(m)}
                       className={`text-xl transition-all hover:scale-110 active:scale-95 ${draft.mood === m ? 'scale-125 drop-shadow-md opacity-100' : 'opacity-40 hover:opacity-100 grayscale hover:grayscale-0'}`}
-                      title={m}
+                      title={MOOD_LABELS[m] || m}
                     >
                       {m}
                     </button>

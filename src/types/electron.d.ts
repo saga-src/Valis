@@ -1,3 +1,8 @@
+export interface Tag {
+  id: number;
+  name: string;
+  color: string;
+}
 
 export interface StorageApi {
   saveGame: (game: any) => Promise<any>;
@@ -28,6 +33,7 @@ export interface StorageApi {
   getImagePath: (url: string, gameId: string) => Promise<string | null>;
   importSessionsExcel: () => Promise<{ success: boolean; count?: number; gamesCount?: number; message?: string }>;
   exportSessionsExcel: () => Promise<{ success: boolean; message?: string }>;
+  openFileDialog: () => Promise<string | null>;
   selectExecutable: () => Promise<string | null>;
   updateWatcherSettings: (settings: { enabled: boolean; interval: number }) => Promise<boolean>;
   onSessionStarted: (callback: (data: { gameId: string; startTime: number; sessionId?: string }) => void) => () => void;
@@ -69,7 +75,16 @@ export interface StorageApi {
   removeWatchPath: (id: number) => Promise<boolean>;
   checkPathExists: (path: string) => Promise<boolean>;
 
-  // Tags
+  // Tags System (v1.1.0)
+  getTags: () => Promise<Tag[]>;
+  createTag: (name: string, color?: string) => Promise<{ success: boolean, id: number }>;
+  updateTag: (id: number, name: string, color: string) => Promise<{ success: boolean }>;
+  deleteTag: (id: number) => Promise<{ success: boolean }>;
+  tagGame: (gameId: string, tagId: number) => Promise<{ success: boolean }>;
+  untagGame: (gameId: string, tagId: number) => Promise<{ success: boolean }>;
+  setGameTags: (gameId: string, tagIds: number[]) => Promise<{ success: boolean }>;
+
+  // Tags (Legacy usage stats)
   getGameTags: (gameId: string) => Promise<string[]>;
   getAllTags: () => Promise<string[]>;
 
@@ -96,6 +111,9 @@ export interface StorageApi {
   // Fix: Add openSteamApiKeyPage to StorageApi interface in types/electron.d.ts
   openSteamApiKeyPage: () => Promise<{ success: boolean }>;
 
+  // Launcher
+  launchGame: (gameId: string) => Promise<{ success: boolean; error?: string }>;
+
   // Updater
   checkForUpdates: () => Promise<any>;
   startDownload: () => Promise<any>;
@@ -121,6 +139,8 @@ export interface StorageApi {
   // System Metadata
   getSystemMeta: () => Promise<Record<string, string>>;
   setSystemMeta: (key: string, value: string) => Promise<{ success: boolean }>;
+  getMeta: (key: string) => Promise<string | null>;
+  setMeta: (key: string, value: string) => Promise<boolean>;
   restoreBackup: (data: any) => Promise<{ success: boolean; error?: string }>;
   getDatabaseDump: () => Promise<{ data: any }>;
   getDatabaseFile: () => Promise<Uint8Array>;

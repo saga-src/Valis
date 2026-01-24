@@ -143,7 +143,8 @@ class GameWatcher {
       // End Sessions
       for (const gameId of activeGameIds) {
           const session = this.activeSessions[gameId];
-          const isRunning = processNames.has(session.executable.toLowerCase());
+          // Use path.basename to extract "game.exe" from "C:\Games\game.exe"
+          const isRunning = processNames.has(path.basename(session.executable).toLowerCase());
           
           if (!isRunning) {
               // console.log(`[Watcher] Game Closed: ${session.title} (Exe: ${session.executable})`);
@@ -155,7 +156,8 @@ class GameWatcher {
       for (const game of trackableGames) {
           if (this.activeSessions[game.id]) continue; 
 
-          if (processNames.has(game.executable.toLowerCase())) {
+          // Use path.basename to extract "game.exe" from full path in DB
+          if (processNames.has(path.basename(game.executable).toLowerCase())) {
               // console.log(`[Watcher] Game Detected: ${game.title}`);
               await this.startSession(game);
           }
@@ -166,7 +168,6 @@ class GameWatcher {
     }
   }
 
-  // ... (Keep startSession and endSession exactly as before)
   async startSession(game) {
     try {
         const existing = await db.getOpenSession(game.id);

@@ -11,6 +11,7 @@ import { useMarkObserver } from './features/gamification/hooks/useMarkObserver';
 import { useAuth } from './context/AuthContext';
 import OnboardingWizard from './features/onboarding/OnboardingWizard';
 import { TourManager } from './features/onboarding/TourManager';
+import { UpdateNotesModal } from './features/update/UpdateNotesModal';
 
 // Import assets for bundling
 import achievementSound from '../public/sounds/achievements.mp3';
@@ -70,6 +71,9 @@ const AppLayout: React.FC = () => {
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans antialiased relative">
       
+      {/* Update Notes Overlay */}
+      <UpdateNotesModal />
+
       {/* Onboarding Overlay */}
       {user && profile && !profile.onboarding_complete && (
         <OnboardingWizard onComplete={refreshProfile} />

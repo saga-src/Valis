@@ -1,4 +1,3 @@
-
 import { db, rawDb } from './client.js';
 
 export { db, rawDb };
@@ -68,7 +67,7 @@ export async function initDB() {
     .addColumn('acquired_at', 'integer')
     .execute();
 
-  // 4. Game Tags Table
+  // 4. Game Tags Table (Usage statistics for session notes)
   await db.schema.createTable('game_tags').ifNotExists()
     .addColumn('game_id', 'text', (col) => col.notNull().references('games.id').onDelete('cascade'))
     .addColumn('tag_name', 'text', (col) => col.notNull())
@@ -93,6 +92,20 @@ export async function initDB() {
   await db.schema.createTable('settings').ifNotExists()
     .addColumn('key', 'text', (col) => col.primaryKey())
     .addColumn('value', 'text')
+    .execute();
+
+  // 7. Tags Table (v1.1.0 Normalized Tagging System)
+  await db.schema.createTable('tags').ifNotExists()
+    .addColumn('id', 'integer', (col) => col.primaryKey().autoIncrement())
+    .addColumn('name', 'text', (col) => col.unique().notNull())
+    .addColumn('color', 'text', (col) => col.defaultTo('#ffffff'))
+    .execute();
+
+  // 8. Game Library Tags Junction Table (v1.1.0)
+  await db.schema.createTable('game_library_tags').ifNotExists()
+    .addColumn('game_id', 'text', (col) => col.notNull().references('games.id').onDelete('cascade'))
+    .addColumn('tag_id', 'integer', (col) => col.notNull().references('tags.id').onDelete('cascade'))
+    .addPrimaryKeyConstraint('pk_game_library_tags', ['game_id', 'tag_id'])
     .execute();
 
   // 7 & 8. Achievements & Progress
