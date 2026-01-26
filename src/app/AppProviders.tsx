@@ -1,3 +1,4 @@
+
 import React, { useEffect } from 'react';
 import { HashRouter } from './index';
 import { ToastProvider } from '../context/ToastContext';
@@ -14,10 +15,8 @@ import { useAutoSync } from '../features/settings/hooks/useAutoSync';
 import { useAchievements } from '../features/achievements/hooks/useAchievements';
 import { useMilestones } from '../features/gamification/hooks/useMilestones';
 import { useSessionStore } from '../features/session-tracker/store';
+import { useSocialBroadcast } from '../features/social/hooks/useSocialBroadcast';
 
-/**
- * Syncs session state to Supabase Presence automatically.
- */
 const PresenceSyncService: React.FC = () => {
   const { updateActivity } = usePresence();
   const activeSession = useSessionStore(state => state.activeSession);
@@ -33,24 +32,15 @@ const PresenceSyncService: React.FC = () => {
   return null;
 };
 
-/**
- * A helper component to run hooks that rely on Router Context
- * or generic background tasks.
- */
 const AppBackgroundServices: React.FC = () => {
-  // Initialize Background Health Monitor
   useHealthMonitor();
-  
-  // Initialize Watcher Synchronization
   useSessionSync();
-  
-  // Initialize Social Broadcasting for Achievements & Milestones
   useAchievements();
   useMilestones();
 
-  // Cloud Sync Automation
   const { user } = useAuth();
   const { checkSyncOnLoad, performCloudUpload } = useAutoSync();
+  const { broadcastSync } = useSocialBroadcast();
 
   useEffect(() => {
     if (user) {
@@ -58,13 +48,11 @@ const AppBackgroundServices: React.FC = () => {
     }
   }, [user]);
 
-  // Global Sync Progress Listener
   const { updateProgress, setSyncing } = useSyncStore();
   
   useEffect(() => {
     if (window.api && window.api.onSteamSyncProgress) {
         const removeListener = window.api.onSteamSyncProgress((data: any) => {
-            // Ensure UI is showing if an event comes in (failsafe)
             setSyncing(true);
             updateProgress(data.message, data.current || 0, data.total || 0);
         });
@@ -72,25 +60,30 @@ const AppBackgroundServices: React.FC = () => {
     }
   }, []);
 
-  // --- SAFE EXIT HANDSHAKE ---
+  // ⚡ SOCIAL SYNC LISTENER
+  useEffect(() => {
+    // @ts-ignore
+    if (window.api && window.api.on) {
+        // @ts-ignore
+        const remove = window.api.on('SOCIAL_BROADCAST_SYNC', (data: any) => {
+            if (user) {
+                broadcastSync(data.platform, data.added, data.achievements);
+            }
+        });
+        return remove;
+    }
+  }, [user, broadcastSync]);
+
   useEffect(() => {
     if (window.api?.onAppClosing) {
       const remove = window.api.onAppClosing(async () => {
-        console.log('[SafeExit] Received close signal from Main. Starting sync...');
-        
         if (user) {
           try {
-            // Use the performCloudUpload from useAutoSync to push latest local DB to Supabase
             await performCloudUpload();
-            console.log('[SafeExit] Final cloud upload successful.');
           } catch (e) {
             console.error('[SafeExit] Final cloud upload failed:', e);
           }
-        } else {
-            console.log('[SafeExit] No user logged in, skipping cloud sync.');
         }
-
-        // Inform the main process we are done
         window.api.sendReadyToQuit();
       });
       return remove;
@@ -110,7 +103,6 @@ interface AppProvidersProps {
 }
 
 export const AppProviders: React.FC<AppProvidersProps> = ({ children }) => {
-  // Apply saved theme on mount
   useEffect(() => {
     const saved = getSavedTheme();
     applyTheme(saved);

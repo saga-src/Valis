@@ -30,10 +30,20 @@ export default function CommunityDashboard() {
   const [targetUsername, setTargetUsername] = useState('');
   const [copied, setCopied] = useState(false);
   
-  // Tab State
+  // Tab State - Default based on Auth
   const [activeView, setActiveView] = useState<'feed' | 'leaderboard'>('leaderboard');
+  const [hasInitializedDefault, setHasInitializedDefault] = useState(false);
+  
   // Auth Modal State for Guests
   const [isAuthOpen, setAuthOpen] = useState(true);
+
+  // Initialize default tab once auth is resolved
+  useEffect(() => {
+    if (!authLoading && !hasInitializedDefault) {
+      setActiveView(user ? 'feed' : 'leaderboard');
+      setHasInitializedDefault(true);
+    }
+  }, [authLoading, user, hasInitializedDefault]);
 
   useEffect(() => {
     if (user) {

@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 // Fix: Import useParams and useNavigate from local shim index file to avoid casing conflict with App.tsx
 import { useParams, useNavigate } from '../../app/index';
@@ -13,7 +14,6 @@ import { useToast } from '../../context/ToastContext';
 import { cn } from '../../lib/utils/cn';
 import { formatPlaytime } from '../../lib/utils/format';
 import { Games } from '../../lib/api';
-import { useSocialBroadcast } from '../social/hooks/useSocialBroadcast';
 
 // ⚡ New Components
 import { GameHero } from './components/GameHero';
@@ -31,7 +31,6 @@ export const GameDetails: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'sessions' | 'reviews' | 'achievements'>('overview');
 
   const metadata = useGameMetadata(game);
-  const { broadcastStatus } = useSocialBroadcast();
   
   // ⚡ Fetch Achievements at top level to show counts in tabs
   const { achievements, loading: achievementsLoading } = useGameAchievements(game?.id || '');
@@ -57,11 +56,7 @@ export const GameDetails: React.FC = () => {
   }, [id]);
 
   const handleUpdateGame = async (updatedGame: any) => {
-    // Check for status change and broadcast
-    if (game && game.status !== updatedGame.status) {
-        broadcastStatus(updatedGame.name || updatedGame.title, updatedGame.status);
-    }
-
+    // Note: Social broadcasting is now handled inside EditGameModal or useGameActions
     await Games.update(updatedGame);
     setGame(updatedGame);
   };

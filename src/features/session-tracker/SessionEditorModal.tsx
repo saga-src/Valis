@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import Modal from '../../components/ui/Modal';
 import { Clock, Calendar, Save, Tag, BookOpen, Gamepad2, Smile, ArrowRight, RefreshCw, X, Trash2 } from 'lucide-react';
@@ -5,6 +6,7 @@ import { cn } from '../../lib/utils/cn';
 import { CUSTOM_PLATFORM_DATA, CUSTOM_PLATFORMS } from '../../types/index';
 import { useMarkObserver } from '../../features/gamification/hooks/useMarkObserver';
 import { useAuth } from '../../context/AuthContext';
+import { useSocialBroadcast } from '../social/hooks/useSocialBroadcast';
 import { supabase } from '../../lib/cloud/supabase';
 import { calculateAndSyncObsession } from '../analytics/logic/obsessionCalculator';
 
@@ -81,6 +83,7 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
 }) => {
   const { reportSignal } = useMarkObserver();
   const { user } = useAuth();
+  const { broadcastSession } = useSocialBroadcast();
 
   // --- STATE ---
   const [date, setDate] = useState('');
@@ -247,22 +250,40 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
 
     // 3. Background Network Operations (Fire-and-Forget)
     void (async () => {
+        // Resolve Game Data (if missing)
+        let targetGame = game;
+        if (!targetGame && gameId && window.api) {
+             try { targetGame = await window.api.getGameById(gameId); } catch { /* ignore */ }
+        }
+
+        if (!targetGame) return;
+
+        // Resolve Platform Name
+        let platformName = targetGame.platform || 'Unknown';
+        if (platformId && CUSTOM_PLATFORM_DATA[platformId as number]) {
+            platformName = CUSTOM_PLATFORM_DATA[platformId as number].name;
+        }
+
+        // Calculate XP
+        const calculateXp = (secs: number) => {
+            const base = Math.floor((secs / 60) * 0.2);
+            if (base === 0 && secs > 300) return 1;
+            return base;
+        };
+        const xpEarned = calculateXp(durationSeconds);
+
+        // --- BROADCAST SESSION TO SOCIAL FEED ---
+        broadcastSession(
+            targetGame.title || targetGame.name,
+            durationSeconds,
+            xpEarned,
+            platformName,
+            targetGame.cover_url || targetGame.cover?.url
+        );
+
         if (!user) return;
         
         try {
-            console.log('[ManualSession] Background sync started...', { userId: user.id });
-
-            // Resolve Game Data (if missing)
-            let targetGame = game;
-            if (!targetGame && gameId && window.api) {
-                 try { targetGame = await window.api.getGameById(gameId); } catch { /* ignore */ }
-            }
-
-            if (!targetGame) {
-                console.warn('Cannot broadcast to feed: Missing game data');
-                return;
-            }
-
             // Resolve Genres
             const getGenres = () => {
                 if (targetGame && targetGame.genres) {
@@ -274,54 +295,26 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
             };
             const genres = getGenres();
 
-            // Resolve Platform Name
-            let platformName = targetGame.platform || 'Unknown';
-            if (platformId && CUSTOM_PLATFORM_DATA[platformId as number]) {
-                platformName = CUSTOM_PLATFORM_DATA[platformId as number].name;
-            }
-
-            // Calculate XP based on new formula: 0.2 XP per minute (12 XP per hour)
-            const calculateXp = (secs: number) => {
-                const base = Math.floor((secs / 60) * 0.2);
-                // Apply 5-minute floor for new sessions
-                if (base === 0 && secs > 300) return 1;
-                return base;
-            };
-
             const tasks: Promise<any>[] = [];
 
             if (initialData) {
-                // --- EDIT MODE ---
+                // --- EDIT MODE (Stats Adjustment) ---
                 const oldSeconds = initialData.durationSeconds || 0;
                 const deltaSeconds = durationSeconds - oldSeconds;
 
                 if (deltaSeconds !== 0) {
-                    // Note: In Edit Mode we don't apply the 5min floor to the individual values to keep deltas precise
                     const oldXP = Math.floor((oldSeconds / 60) * 0.2);
                     const newXP = Math.floor((durationSeconds / 60) * 0.2);
                     const deltaXP = newXP - oldXP;
 
-                    // A. Update Stats
-                    tasks.push(
-                        supabase.rpc('update_player_stats', { playtime: deltaSeconds, xp: deltaXP })
-                            .then(({ error }) => error && console.error('Stats update failed:', error))
-                    );
-                    
-                    // B. Global Leaderboard
-                    tasks.push(
-                        supabase.rpc('update_leaderboard', { p_category: 'playtime', p_sub_category: 'global', p_increment: deltaSeconds })
-                            .then(({ error }) => error && console.error('Global LB failed:', error))
-                    );
-                    
-                    // C. Genre Leaderboards
+                    tasks.push(supabase.rpc('update_player_stats', { playtime: deltaSeconds, xp: deltaXP }));
+                    tasks.push(supabase.rpc('update_leaderboard', { p_category: 'playtime', p_sub_category: 'global', p_increment: deltaSeconds }));
                     for (const g of genres) {
-                        tasks.push(
-                            supabase.rpc('update_leaderboard', { p_category: 'playtime', p_sub_category: g, p_increment: deltaSeconds })
-                        );
+                        tasks.push(supabase.rpc('update_leaderboard', { p_category: 'playtime', p_sub_category: g, p_increment: deltaSeconds }));
                     }
                 }
-
-                // D. Update Activity Feed
+                
+                // Update specific activity if it was found
                 const oldHappenedAt = new Date(initialData.startTime).toISOString();
                 tasks.push(
                     supabase.from('activities')
@@ -334,86 +327,42 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
                                 game_id: targetGame.igdb_id || targetGame.id,
                                 platform: platformName,
                                 notes: tags,
-                                xp: calculateXp(durationSeconds),
+                                xp: xpEarned,
                                 mood: mood
                             }
                         })
                         .eq('user_id', user.id)
-                        .eq('game_id', targetGame.id)
                         .eq('type', 'session')
                         .eq('happened_at', oldHappenedAt)
-                        .then(({ error }) => error && console.error('Feed update failed:', error))
                 );
 
             } else {
-                // --- ADD MODE ---
-                const xp = calculateXp(durationSeconds);
-                
-                // A. Update Stats
-                tasks.push(
-                    supabase.rpc('update_player_stats', { playtime: durationSeconds, xp: xp })
-                        .then(({ error }) => error && console.error('Stats insert failed:', error))
-                );
-
-                // B. Global Leaderboard
-                tasks.push(
-                    supabase.rpc('update_leaderboard', { p_category: 'playtime', p_sub_category: 'global', p_increment: durationSeconds })
-                        .then(({ error }) => error && console.error('Global LB insert failed:', error))
-                );
-                
-                // C. Genre Leaderboards
+                // --- ADD MODE (New Stats) ---
+                tasks.push(supabase.rpc('update_player_stats', { playtime: durationSeconds, xp: xpEarned }));
+                tasks.push(supabase.rpc('update_leaderboard', { p_category: 'playtime', p_sub_category: 'global', p_increment: durationSeconds }));
                 for (const g of genres) {
-                    tasks.push(
-                        supabase.rpc('update_leaderboard', { p_category: 'playtime', p_sub_category: g, p_increment: durationSeconds })
-                    );
+                    tasks.push(supabase.rpc('update_leaderboard', { p_category: 'playtime', p_sub_category: g, p_increment: durationSeconds }));
                 }
 
-                // D. Insert Activity Feed
-                const activityPayload = {
-                    user_id: user.id,
-                    game_id: targetGame.id,
-                    type: 'session',
-                    happened_at: happenedAt,
-                    data: {
-                        game: targetGame.title || targetGame.name,
-                        duration: durationSeconds,
-                        cover_url: targetGame.cover_url || targetGame.cover?.url || '',
-                        game_id: targetGame.igdb_id || targetGame.id,
-                        platform: platformName,
-                        notes: tags,
-                        xp: xp,
-                        mood: mood
-                    }
-                };
-                tasks.push(
-                    supabase.from('activities').insert(activityPayload)
-                        .then(({ error }) => error && console.error('Feed insert failed:', error))
-                );
+                // Activities table is handled via the broadcastSession call above which uses broadcast()
             }
 
-            // E. Execute all parallel
             await Promise.all(tasks);
-            console.log('[ManualSession] Background sync complete.');
-            
-            // F. Trigger Obsession Update
             await calculateAndSyncObsession(user.id);
 
         } catch (e) {
-            console.error('[ManualSession] Background sync critical failure:', e);
+            console.error('[ManualSession] Cloud sync failure:', e);
         }
     })();
   };
 
   // --- DELETE HANDLER ---
   const handleDelete = () => {
-      // 1. Optimistic UI Update (Instant)
       if (onDelete) onDelete();
 
-      // 2. Background Network Operations (Fire-and-Forget)
       void (async () => {
         if (initialData && user) {
           try {
-              // Resolve Game
               let targetGame = game;
               if (!targetGame && gameId && window.api) {
                    try { targetGame = await window.api.getGameById(gameId); } catch { /* ignore */ }
@@ -421,7 +370,6 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
 
               if (targetGame) {
                   const seconds = initialData.durationSeconds || 0;
-                  // XP calculation with new formula for removal
                   const xpToRemove = -Math.floor((seconds / 60) * 0.2);
                   const negSeconds = -seconds;
 
@@ -433,36 +381,23 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
                   };
                   const genres = getGenres();
                   
-                  console.log('[ManualSession] Background Deletion:', { playtime: negSeconds, xp: xpToRemove });
-
                   const tasks: Promise<any>[] = [];
-
-                  // A. Revert Stats
                   tasks.push(supabase.rpc('update_player_stats', { playtime: negSeconds, xp: xpToRemove }));
-
-                  // B. Revert Leaderboards
                   tasks.push(supabase.rpc('update_leaderboard', { p_category: 'playtime', p_sub_category: 'global', p_increment: negSeconds }));
                   for (const g of genres) {
                       tasks.push(supabase.rpc('update_leaderboard', { p_category: 'playtime', p_sub_category: g, p_increment: negSeconds }));
                   }
 
-                  // C. Delete Activity Feed Entry
-                  if (initialData.startTime) {
-                       const originalDate = new Date(initialData.startTime).toISOString();
-                       
-                       tasks.push(
-                           supabase.from('activities')
-                            .delete()
-                            .eq('user_id', user.id)
-                            .eq('game_id', targetGame.id)
-                            .eq('type', 'session')
-                            .eq('happened_at', originalDate)
-                       );
-                  }
+                  const originalDate = new Date(initialData.startTime).toISOString();
+                  tasks.push(
+                       supabase.from('activities')
+                        .delete()
+                        .eq('user_id', user.id)
+                        .eq('type', 'session')
+                        .eq('happened_at', originalDate)
+                  );
 
                   await Promise.all(tasks);
-                  
-                  // D. Update Obsession
                   await calculateAndSyncObsession(user.id);
               }
           } catch (e) {
@@ -479,7 +414,7 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
     CUSTOM_PLATFORM_DATA[CUSTOM_PLATFORMS.XBOX_PC],
     CUSTOM_PLATFORM_DATA[CUSTOM_PLATFORMS.PSN],
     CUSTOM_PLATFORM_DATA[CUSTOM_PLATFORMS.STANDALONE],
-    { id: 130, name: 'Nintendo Switch' }, // Common static ID
+    { id: 130, name: 'Nintendo Switch' },
     CUSTOM_PLATFORM_DATA[CUSTOM_PLATFORMS.UNOFFICIAL],
   ];
 
@@ -619,22 +554,6 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
                         className="flex-1 bg-transparent outline-none text-sm min-w-[120px] placeholder:text-muted-foreground/50"
                     />
                 </div>
-                {/* Suggestions */}
-                {suggestedTags.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2">
-                        <span className="text-xs text-muted-foreground self-center">Recent:</span>
-                        {suggestedTags.filter(t => !tags.includes(t)).slice(0, 5).map(tag => (
-                            <button
-                                key={tag}
-                                type="button"
-                                onClick={() => addSuggestion(tag)}
-                                className="text-xs border border-dashed border-muted-foreground/50 px-2 py-0.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                            >
-                                {tag}
-                            </button>
-                        ))}
-                    </div>
-                )}
             </div>
 
             <div className="space-y-1.5">

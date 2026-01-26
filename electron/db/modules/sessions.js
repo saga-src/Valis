@@ -1,8 +1,8 @@
-
 import { db } from '../client.js';
 import crypto from 'crypto';
 import { saveGameTags } from './tags.js';
 import { recalculatePlaytime } from './games.js';
+import { incrementUserStat } from './gamification.js';
 
 export async function createSession(gameId, startTime) {
   const id = crypto.randomUUID();
@@ -48,6 +48,12 @@ export async function endSession(sessionId, dataOrEndTime = Date.now()) {
       .execute();
       
     await recalculatePlaytime(session.game_id);
+
+    // ⚡ VETERAN TRIGGER: Increment post-game sessions if game is Beat or Completed
+    const game = await db.selectFrom('library').select('status').where('game_id', '=', session.game_id).executeTakeFirst();
+    if (game && (game.status === 'Beat' || game.status === 'Completed')) {
+        await incrementUserStat('veteran_sessions', 1);
+    }
   }
 }
 
@@ -75,6 +81,13 @@ export async function addManualSession(sessionData) {
     
     if (notes) await saveGameTags(String(gameId), notes);
     await recalculatePlaytime(String(gameId));
+
+    // ⚡ VETERAN TRIGGER: Increment post-game sessions if game is Beat or Completed
+    const game = await db.selectFrom('library').select('status').where('game_id', '=', String(gameId)).executeTakeFirst();
+    if (game && (game.status === 'Beat' || game.status === 'Completed')) {
+        await incrementUserStat('veteran_sessions', 1);
+    }
+
     return id;
 }
 

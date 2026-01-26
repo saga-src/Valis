@@ -1,4 +1,5 @@
 import { db, rawDb } from './client.js';
+import { runGamificationMigration } from './modules/gamification.js';
 
 export { db, rawDb };
 
@@ -346,6 +347,14 @@ export async function initDB() {
     .column('status')
     .ifNotExists()
     .execute();
+
+  // Run Gamification Migration (v2.0)
+  // This ensures XP and Badges are consistent on startup
+  try {
+    await runGamificationMigration();
+  } catch (e) {
+    console.error('[DB] Migration Error:', e);
+  }
 
   console.log('[DB] Initialization complete.');
 }

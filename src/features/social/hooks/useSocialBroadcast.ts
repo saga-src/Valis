@@ -5,77 +5,69 @@ import { useAuth } from '../../../context/AuthContext';
 export const useSocialBroadcast = () => {
   const { user } = useAuth();
 
-  const broadcast = async (type: 'session' | 'achievement' | 'status' | 'review' | 'import', payload: any) => {
+  const broadcast = async (type: string, payload: any) => {
     if (!user) return;
 
     try {
-      // FIX: Ensure 'payload' (which contains cover_url) is assigned to the 'data' column
-      // We do not map game_title or game_cover_url to top-level columns as they likely don't exist in the schema
+      // Ensure payload is a plain JSON object
+      const cleanPayload = JSON.parse(JSON.stringify(payload));
+      
       const activityData = {
         user_id: user.id,
         type: type,
-        data: payload, // <--- Correct: JSON data goes here
+        data: cleanPayload,
         created_at: new Date().toISOString()
       };
 
-      const { error } = await supabase.from('activities').insert(activityData);
+      console.log(`[Broadcast] Transmitting ${type}:`, activityData);
 
-      if (error) {
-        console.error("Broadcast Failed:", error);
-      }
+      const { error } = await supabase.from('activities').insert(activityData);
+      if (error) console.error("Broadcast Failed:", error);
     } catch (err) {
       console.error("Broadcast Exception:", err);
     }
   };
 
-  // Helper: Broadcast Session
-  const broadcastSession = async (gameTitle: string, durationSeconds: number, coverUrl?: string) => {
-    await broadcast('session', {
-      game: gameTitle,
-      duration: durationSeconds,
-      cover_url: coverUrl // This will now go safely into 'data'
-    });
-  };
+  return {
+    broadcast,
 
-  // Helper: Broadcast Achievement
-  const broadcastAchievement = async (gameTitle: string, achievementName: string, iconUrl?: string, coverUrl?: string) => {
-    await broadcast('achievement', {
-      game: gameTitle,
-      achievement: achievementName,
-      icon_url: iconUrl,
-      cover_url: coverUrl,
-      detail: `Unlocked: ${achievementName}`
-    });
-  };
+    broadcastSession: async (game: string, duration: number, xp: number, platform: string, cover_url?: string) => 
+      await broadcast('session', { game_title: game, cover_url, duration, xp, platform }),
 
-  // Helper: Broadcast Review
-  const broadcastReview = async (gameTitle: string, rating: number, text: string, coverUrl?: string) => {
-    await broadcast('review', {
-      game: gameTitle,
-      rating,
-      text,
-      cover_url: coverUrl
-    });
-  };
+    broadcastSync: async (platform: string, gameCount: number, achievementCount: number) => 
+      await broadcast('sync', { platform, count: gameCount, achievements: achievementCount }),
 
-  // Helper: Broadcast Status Update
-  const broadcastStatus = async (gameTitle: string, status: string, score?: number, coverUrl?: string) => {
-    await broadcast('status', {
-        game: gameTitle,
-        status,
-        score,
-        cover_url: coverUrl
-    });
-  };
+    broadcastImport: async (platform: string, count: number, hours: number) =>
+      await broadcast('import', { platform, count, hours }),
 
-  // Helper: Broadcast Import
-  const broadcastImport = async (source: string, count: number, totalPlaytimeHours?: number) => {
-    await broadcast('import', {
-      source,
-      count,
-      playtime: totalPlaytimeHours
-    });
-  };
+    broadcastGameAdded: async (game: string, platform: string, price: number, cover_url?: string) => 
+      await broadcast('added', { game_title: game, cover_url, platform, price }),
 
-  return { broadcast, broadcastSession, broadcastAchievement, broadcastReview, broadcastStatus, broadcastImport };
+    broadcastStatusChange: async (game: string, oldStatus: string, newStatus: string, cover_url?: string) => 
+      await broadcast('status', { game_title: game, cover_url, old_status: oldStatus, new_status: newStatus }),
+
+    broadcastAchievement: async (game: string, achievement: string, icon?: string, cover_url?: string) =>
+      await broadcast('achievement', { game_title: game, achievement, icon, cover_url }),
+
+    broadcastReview: async (game: string, rating: number, text: string, cover_url?: string) =>
+      await broadcast('review', { game_title: game, rating, text, cover_url }),
+
+    broadcastMilestone: async (milestone: { title: string; rank: number; archetype: string; icon: string; discipline: string; maxRanks: number }) => 
+      await broadcast('milestone', { 
+        title: milestone.title, 
+        level: milestone.rank, 
+        discipline: milestone.discipline,
+        archetype: milestone.archetype, 
+        icon: milestone.icon,
+        maxRanks: milestone.maxRanks
+      }),
+
+    broadcastProtocol: async (artifact: { title: string; lore: string; visual: string; iconName: string }) => 
+      await broadcast('protocol', { 
+        name: artifact.title, 
+        description: artifact.lore, 
+        visual: artifact.visual, 
+        icon: artifact.iconName 
+      })
+  };
 };

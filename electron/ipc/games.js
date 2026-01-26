@@ -7,6 +7,7 @@ import * as igdb from '../lib/igdb.js';
 import { cloudGate } from '../services/CloudGate.js';
 import achievementOrchestrator from '../services/AchievementOrchestrator.js';
 import { saveAchievementsToDb } from '../db/modules/achievements.js';
+import { incrementUserStat } from '../db/modules/gamification.js';
 
 // Helper to notify all windows
 const broadcastLibraryUpdate = (event) => {
@@ -56,6 +57,10 @@ export function registerGameHandlers() {
 
   ipcMain.handle('add-game', async (event, game) => {
     const result = await db.addGame(game);
+    // ⚡ FABRICATOR TRIGGER: Increment if manual add
+    if (result && result.success && !game.isSilent) {
+        await incrementUserStat('manual_games_added', 1);
+    }
     broadcastLibraryUpdate(event);
     triggerAutoScrape(event, game, result);
     return result;
@@ -76,6 +81,10 @@ export function registerGameHandlers() {
 
   ipcMain.handle('db:add-game', async (event, game) => {
     const result = await db.addGame(game);
+    // ⚡ FABRICATOR TRIGGER
+    if (result && result.success && !game.isSilent) {
+        await incrementUserStat('manual_games_added', 1);
+    }
     broadcastLibraryUpdate(event);
     triggerAutoScrape(event, game, result);
     return result;
@@ -83,6 +92,10 @@ export function registerGameHandlers() {
 
   ipcMain.handle('db:save-game', async (event, game) => {
     const result = await db.addGame(game);
+    // ⚡ FABRICATOR TRIGGER
+    if (result && result.success && !game.isSilent) {
+        await incrementUserStat('manual_games_added', 1);
+    }
     broadcastLibraryUpdate(event);
     triggerAutoScrape(event, game, result);
     return result;
@@ -195,8 +208,14 @@ export function registerGameHandlers() {
         console.error('[Launch Error] Spawn failed:', err);
       });
 
-      child.on('spawn', () => {
+      child.on('spawn', async () => {
         console.log('[Launch Debug] Process spawned successfully with PID:', child.pid);
+        // ⚡ OPERATOR TRIGGER: Increment launcher starts
+        try {
+            await incrementUserStat('launcher_starts', 1);
+        } catch(e) {
+            console.warn('[Launch] Failed to increment launcher metric:', e);
+        }
       });
 
       child.unref();

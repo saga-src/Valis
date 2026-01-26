@@ -9,40 +9,30 @@ import { searchIGDB, fetchIGDBMetadata, fetchGameByPsnId, fetchGameByPsnStoreId 
 
 const PLATFORM_MAP = { 'PS5': 167, 'PS4': 48, 'PS3': 9, 'PSVita': 46, 'PSP': 38 };
 
-/**
- * Maps PSN API platform codes to user-friendly full names.
- */
 const getPlatformKey = (rawPlatform) => {
     if (!rawPlatform) return 'Playstation';
-    
     const p = rawPlatform.toUpperCase();
-
     if (p.includes('PS5') || p.includes('PLAYSTATION 5')) return 'Playstation 5';
     if (p.includes('PS4') || p.includes('PLAYSTATION 4')) return 'Playstation 4';
     if (p.includes('PS3') || p.includes('PLAYSTATION 3')) return 'Playstation 3';
     if (p.includes('VITA')) return 'Playstation Vita';
     if (p.includes('PSP')) return 'Playstation Portable';
-    
     return 'Playstation'; 
 };
 
-// Helper: Parse ISO 8601 Duration (PT10H30M5S) to Seconds
 function parseDuration(duration) {
     if (!duration) return 0;
     const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
     if (!match) return 0;
-    
     const hours = (parseInt(match[1]) || 0);
     const minutes = (parseInt(match[2]) || 0);
     const seconds = (parseInt(match[3]) || 0);
-    
     return (hours * 3600) + (minutes * 60) + seconds;
 }
 
 export async function syncPsnLibrary(sender) {
     sender.send('steam:sync-progress', { message: 'Connecting to PlayStation Network...', current: 0, total: 0 });
 
-    // 1. Auth & Refresh
     const accounts = await getLinkedAccounts('psn');
     let account = accounts[0];
     if (!account) return { success: false, error: 'No PSN account linked.' };
@@ -59,7 +49,6 @@ export async function syncPsnLibrary(sender) {
     }
     const authorization = { accessToken: authData.accessToken };
 
-    // 2. Profile
     try {
         const profile = await psnClient.getProfile(authorization);
         if (profile.onlineId !== 'PlayStation User') {
@@ -73,7 +62,6 @@ export async function syncPsnLibrary(sender) {
         }
     } catch (e) {}
 
-    // 3. Fetch Library
     let psnGames = [];
     try { psnGames = await psnClient.fetchLibrary(authorization); } 
     catch (e) { return { success: false, error: 'Library fetch failed.' }; }
@@ -97,32 +85,22 @@ export async function syncPsnLibrary(sender) {
             total: totalGames 
         });
 
-        // 1. Resolve Universal ID
         let igdbId = null;
         if (cleanStoreId) {
-            try { 
-                igdbId = await fetchGameByPsnStoreId(cleanStoreId); 
-            } catch(e) {}
+            try { igdbId = await fetchGameByPsnStoreId(cleanStoreId); } catch(e) {}
         }
         if (!igdbId) {
-            try { 
-                igdbId = await fetchGameByPsnId(game.npCommunicationId); 
-            } catch(e) {}
+            try { igdbId = await fetchGameByPsnId(game.npCommunicationId); } catch(e) {}
         }
         if (!igdbId) {
             const searchResults = await searchIGDB(cleanTitle);
-            if (searchResults && searchResults.length > 0) {
-                igdbId = searchResults[0].id;
-            }
+            if (searchResults && searchResults.length > 0) igdbId = searchResults[0].id;
         }
 
         const primaryPsnId = cleanStoreId || game.npCommunicationId;
         const resolvedId = igdbId ? String(igdbId) : `psn-${primaryPsnId}`;
-
-        // 2. Fetch Existing Game by universal ID
         const existingGame = await getGameById(resolvedId);
 
-        // 3. Calculate Smart Playtime (Granular by Generation)
         let legacyEntries = [];
         const psnSeconds = parseDuration(game.playDuration);
         const specificSource = platformLabel;
@@ -130,37 +108,16 @@ export async function syncPsnLibrary(sender) {
 
         if (existingGame) {
           legacyEntries = existingGame.legacy_playtime_seconds || [];
-          
-          // CHECK: Have we already counted THIS platform generation for THIS game? (Strict Source Match)
-          const hasSpecificSource = legacyEntries.some(e => 
-            e.source?.toLowerCase().trim() === specificSource.toLowerCase().trim()
-          );
-
+          const hasSpecificSource = legacyEntries.some(e => e.source?.toLowerCase().trim() === specificSource.toLowerCase().trim());
           if (!hasSpecificSource && psnSeconds > 0) {
-            // New generation entry for this game! (e.g. user has PS4 and PS5 versions)
-            legacyEntries.push({ 
-                source: specificSource, 
-                platform_id: PLATFORM_MAP[game.platform] || 48, 
-                seconds: psnSeconds 
-            });
-            console.log(`[PsnSync] Aggregating ${platformLabel} time for: ${cleanTitle}`);
-          } else {
-            console.log(`[PsnSync] ${specificSource} source already exists for: ${cleanTitle}. Skipping.`);
+            legacyEntries.push({ source: specificSource, platform_id: PLATFORM_MAP[game.platform] || 48, seconds: psnSeconds });
           }
         } else {
-          // Fresh import
-          legacyEntries = psnSeconds > 0 ? [{ 
-              source: specificSource, 
-              platform_id: PLATFORM_MAP[game.platform] || 48, 
-              seconds: psnSeconds 
-          }] : [];
+          legacyEntries = psnSeconds > 0 ? [{ source: specificSource, platform_id: PLATFORM_MAP[game.platform] || 48, seconds: psnSeconds }] : [];
         }
 
-        // 4. Upsert Logic using addGame
         let activeGameId = resolvedId;
-        
         if (!existingGame) {
-            console.log(`[PsnSync] Importing new game: ${cleanTitle}`);
             const gameData = {
                 id: resolvedId,
                 name: cleanTitle,
@@ -168,27 +125,25 @@ export async function syncPsnLibrary(sender) {
                 psn_trophy_id: game.npCommunicationId,
                 platform_ownership: [{ id: PLATFORM_MAP[game.platform] || 48, price: 0 }],
                 legacy_playtime_seconds: legacyEntries,
-                status: 'Backlog'
+                status: 'Backlog',
+                skip_achievement_scan: true
             };
-
             if (igdbId) {
                 const metadata = await fetchIGDBMetadata(igdbId);
                 if (metadata) Object.assign(gameData, metadata);
             }
-
             await addGame(gameData);
             totalAdded++;
         } else {
-            // Update existing game with potential new platform time aggregation
             await addGame({
               ...existingGame,
               legacy_playtime_seconds: legacyEntries,
               psn_id: cleanStoreId,
-              psn_trophy_id: game.npCommunicationId
+              psn_trophy_id: game.npCommunicationId,
+              skip_achievement_scan: true
             });
         }
 
-        // 5. Sync Trophies
         if (activeGameId && game.npCommunicationId) {
             try {
                 const serviceName = game.npServiceName || 'trophy';
@@ -196,7 +151,6 @@ export async function syncPsnLibrary(sender) {
                 const localAchievements = await getGameAchievements(activeGameId) || [];
 
                 if (localAchievements.length === 0 && psnEarned.length > 0) {
-                    console.log(`[PsnSync] 🏆 Importing master list for ${cleanTitle}...`);
                     const psnDefs = await psnClient.fetchTrophyDefinitions(authorization, game.npCommunicationId, serviceName);
                     const converted = psnDefs.map(def => ({
                         id: def.id,
@@ -216,10 +170,7 @@ export async function syncPsnLibrary(sender) {
                         if (earnedTrophy.earned) {
                             const def = psnDefs.find(d => d.id === earnedTrophy.id);
                             if (!def) continue;
-                            const match = localAchievements.find(a => 
-                                (a.displayName || '').toLowerCase() === def.name.toLowerCase() || 
-                                (a.name || '').toLowerCase() === def.name.toLowerCase()
-                            );
+                            const match = localAchievements.find(a => (a.displayName || '').toLowerCase() === def.name.toLowerCase() || (a.name || '').toLowerCase() === def.name.toLowerCase());
                             if (match && !match.unlockedAt) {
                                 await unlockAchievement(activeGameId, match.name, earnedTrophy.earnedDateTime);
                                 unlockCount++;
@@ -228,12 +179,13 @@ export async function syncPsnLibrary(sender) {
                     }
                     if (unlockCount > 0) totalSynced++;
                 }
-            } catch (e) { 
-                console.warn(`[PsnSync] Trophy Error for ${cleanTitle}: ${e.message}`); 
-            }
+            } catch (e) { console.warn(`[PsnSync] Trophy Error for ${cleanTitle}: ${e.message}`); }
         }
-
         await new Promise(r => setTimeout(r, 600));
     }
+
+    // 6. BATCH SOCIAL SIGNAL
+    sender.send('SOCIAL_BROADCAST_SYNC', { platform: 'PlayStation', added: totalAdded, achievements: totalSynced });
+
     return { success: true, added: totalAdded, synced: totalSynced, playtimeMinutes: totalPlaytimeSeconds / 60 };
 }

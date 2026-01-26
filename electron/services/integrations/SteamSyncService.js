@@ -134,7 +134,8 @@ export async function syncSteamLibrary(sender) {
                   id: String(igdbId),
                   steam_id: appId,
                   legacy_playtime_seconds: legacyEntries,
-                  platform_ownership: [{ id: 99001, price: 0 }] 
+                  platform_ownership: [{ id: 99001, price: 0 }],
+                  skip_achievement_scan: true // Suppress scan during sync to avoid individual spam
                 });
               } else {
                 await addGame({
@@ -143,7 +144,8 @@ export async function syncSteamLibrary(sender) {
                   steam_id: appId,
                   legacy_playtime_seconds: legacyEntries,
                   platform_ownership: [{ id: 99001, price: 0 }],
-                  genres: [], involved_companies: []
+                  genres: [], involved_companies: [],
+                  skip_achievement_scan: true
                 });
               }
           } else {
@@ -153,7 +155,8 @@ export async function syncSteamLibrary(sender) {
                 steam_id: appId,
                 legacy_playtime_seconds: legacyEntries,
                 platform_ownership: [{ id: 99001, price: 0 }],
-                genres: [], involved_companies: []
+                genres: [], involved_companies: [],
+                skip_achievement_scan: true
               });
           }
           totalAdded++;
@@ -163,7 +166,8 @@ export async function syncSteamLibrary(sender) {
             ...existingGame,
             legacy_playtime_seconds: legacyEntries,
             // Ensure steam_id is linked if it was missing or resolved differently
-            steam_id: appId
+            steam_id: appId,
+            skip_achievement_scan: true
           });
         }
 
@@ -195,6 +199,9 @@ export async function syncSteamLibrary(sender) {
         await new Promise(r => setTimeout(r, 400));
       }
   }
+
+  // 7. BATCH SOCIAL SIGNAL
+  sender.send('SOCIAL_BROADCAST_SYNC', { platform: 'Steam', added: totalAdded, achievements: totalSynced });
 
   return { added: totalAdded, synced: totalSynced, playtimeMinutes: totalPlaytimeMinutes };
 }

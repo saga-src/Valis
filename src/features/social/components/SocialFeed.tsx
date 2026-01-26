@@ -3,20 +3,27 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/cloud/supabase';
 import { formatDistanceToNow } from 'date-fns';
 import { 
-  Trophy, Clock, Flag, MessageSquare, RefreshCw, Activity, 
-  CloudDownload, Medal, Star, Quote, Zap, Gamepad2 
+  Trophy, Clock, Flag, RefreshCw, Activity, 
+  CloudDownload, Medal, Zap, Gamepad2, Rocket, Star, CheckCircle2, ArrowRight
 } from 'lucide-react';
+import * as Icons from 'lucide-react';
 import { cn } from '../../../lib/utils/cn';
 import { GamePreviewModal } from '../../../components/game/GamePreviewModal';
 import { useNavigate } from '../../../app/index';
+import { getCoverUrl } from '../../../lib/api/igdb';
+import { getStatusColorVar } from '../../library/utils/libraryUtils';
+import { GENERAL_MARKS } from '../../gamification/logic/generalMarks';
+import { getMarkVisualStyles } from '../../gamification/components/GeneralMarkCard';
+import { BadgeReality } from '../../gamification/components/BadgeReality';
+import { getRankCardStyle, getMaterial } from '../styles/rankCardStyles';
 
 // --- TYPES ---
 interface FeedItem {
   id: string;
-  type: 'session' | 'achievement' | 'status' | 'review' | 'import' | 'milestone' | 'protocol';
+  type: string;
   created_at: string;
   user_id: string;
-  game_id?: string; // Top-level FK from activities table
+  game_id?: string;
   data: any; 
   profile?: {
     username: string;
@@ -24,7 +31,6 @@ interface FeedItem {
   };
 }
 
-// --- HELPER FUNCTIONS ---
 const formatFeedDuration = (totalSeconds: number) => {
   if (!totalSeconds) return '0m';
   const hours = Math.floor(totalSeconds / 3600);
@@ -33,268 +39,266 @@ const formatFeedDuration = (totalSeconds: number) => {
   return `${minutes}m`;
 };
 
-// --- SUB-COMPONENTS ---
+const DynamicIcon = ({ name, className, size = 24 }: { name: string; className?: string; size?: number }) => {
+  // @ts-ignore
+  const Icon = Icons[name] || Icons.Trophy;
+  return <Icon className={className} size={size} />;
+};
 
-// 1. User Meta (Right Aligned Header - Larger & Readable)
+// --- SHARED COMPONENTS ---
+
 const UserMeta = ({ profile, timestamp, userId }: { profile?: { username: string, avatar_url: string }, timestamp: string, userId: string }) => {
   const navigate = useNavigate();
   return (
-    <div className="flex flex-col items-end shrink-0 ml-4">
+    <div className="flex flex-col items-end shrink-0">
        <div 
-         className="flex items-center gap-3 mb-1 cursor-pointer group"
+         className="flex items-center gap-2 mb-1 cursor-pointer group"
          onClick={(e) => {
            e.stopPropagation();
            navigate(`/profile/${userId}`);
          }}
        >
-          <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors">{profile?.username || 'Unknown'}</span>
-          <div className="w-10 h-10 rounded-full bg-muted border border-border shadow-sm overflow-hidden relative group-hover:ring-2 ring-primary transition-all">
+          <span className="font-bold text-xs text-foreground group-hover:text-primary transition-colors">{profile?.username || 'Unknown'}</span>
+          <div className="w-8 h-8 rounded-full bg-muted border border-border shadow-sm overflow-hidden relative group-hover:ring-2 ring-primary transition-all">
             {profile?.avatar_url ? (
                 <img src={profile.avatar_url} alt={profile.username} className="w-full h-full object-cover" />
             ) : (
-                <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary font-bold text-sm">
-                    {profile?.username?.charAt(0).toUpperCase() || '?'}
+                <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary font-bold text-xs uppercase">
+                    {profile?.username?.charAt(0) || '?'}
                 </div>
             )}
           </div>
        </div>
-       <span className="text-xs text-muted-foreground font-medium">
+       <span className="text-[10px] text-muted-foreground font-mono uppercase">
           {formatDistanceToNow(new Date(timestamp), { addSuffix: true })}
        </span>
     </div>
   );
 };
 
-// 2. System Card (Milestones & Protocols)
-const SystemActivityCard = ({ item }: { item: FeedItem }) => {
-  const isProtocol = item.type === 'protocol';
-  
-  // Style Config
-  const styles = isProtocol ? {
-      bg: "bg-emerald-950/10 border-emerald-500/20",
-      iconBox: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
-      title: "text-emerald-500",
-      icon: <Zap size={24} />
-  } : {
-      bg: "bg-amber-950/10 border-amber-500/20",
-      iconBox: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-      title: "text-amber-500",
-      icon: <Medal size={24} />
-  };
+// --- SPECIALIZED CARDS ---
 
-  const headerText = isProtocol 
-    ? `Protocol • ${item.data.collection || 'System Core'}`
-    : `Milestone • ${item.data.archetype || 'Progression'}`;
-    
-  const titleText = isProtocol
-    ? item.data.title || 'Unknown Protocol'
-    : item.data.rank 
-        ? `Rank ${item.data.rank}: ${item.data.title}`
-        : item.data.title;
-
+const SessionCard = ({ item }: { item: FeedItem }) => {
+  const d = item.data;
   return (
-    <div className={cn("rounded-2xl p-6 border transition-all hover:bg-muted/10", styles.bg)}>
-      <div className="flex gap-6 items-start">
-        {/* Left Icon */}
-        <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center border shrink-0 shadow-lg", styles.iconBox)}>
-          {styles.icon}
-        </div>
+    <div className="flex items-center gap-4 p-4 bg-card/40 border border-border/50 rounded-2xl group hover:border-primary/30 transition-all">
+      {/* Left */}
+      <div className="w-16 h-20 shrink-0 rounded-lg overflow-hidden bg-muted border border-white/5">
+        <img src={getCoverUrl(d.cover_url)} className="w-full h-full object-cover" alt="" />
+      </div>
+      {/* Center */}
+      <div className="flex-1 min-w-0">
+        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest block mb-0.5">New Session</span>
+        <h4 className="text-sm font-black text-foreground truncate">{d.game_title}</h4>
+        <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1.5 flex-wrap">
+           <span className="flex items-center gap-1"><Clock size={12} className="text-blue-400" /> {formatFeedDuration(d.duration)}</span>
+           <span className="opacity-30">•</span>
+           <span className="flex items-center gap-1"><Gamepad2 size={12} className="text-primary" /> {d.platform || 'Unknown'}</span>
+           <span className="opacity-30">•</span>
+           <span className="text-emerald-500 font-bold">+{d.xp || 0} XP</span>
+        </p>
+      </div>
+      {/* Right */}
+      <UserMeta profile={item.profile} timestamp={item.created_at} userId={item.user_id} />
+    </div>
+  );
+};
 
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-           <div className="flex justify-between items-start mb-2">
-              <div className={cn("text-xs font-black uppercase tracking-widest mt-1", styles.title)}>
-                  {headerText}
-              </div>
-              <UserMeta profile={item.profile} timestamp={item.created_at} userId={item.user_id} />
-           </div>
-           
-           <h4 className="text-xl font-black text-foreground leading-tight mb-2">
-              {titleText}
-           </h4>
-           {item.data.detail && (
-             <p className="text-sm text-muted-foreground/80 leading-relaxed">{item.data.detail}</p>
+const SyncCard = ({ item }: { item: FeedItem }) => {
+  const d = item.data;
+  return (
+    <div className="flex items-center gap-4 p-4 bg-blue-500/5 border border-blue-500/20 rounded-2xl group">
+      {/* Left */}
+      <div className="w-16 h-16 shrink-0 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400 border border-blue-500/20">
+        <CloudDownload size={32} />
+      </div>
+      {/* Center */}
+      <div className="flex-1 min-w-0">
+        <h4 className="text-sm font-black text-foreground uppercase tracking-wider">Synced Library</h4>
+        <div className="flex gap-2 mt-2">
+           <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-black rounded uppercase border border-blue-500/30">
+             +{d.count} Games
+           </span>
+           {d.achievements > 0 && (
+             <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 text-[10px] font-black rounded uppercase border border-amber-500/30">
+               +{d.achievements} Trophies
+             </span>
            )}
         </div>
+        <p className="text-[10px] text-muted-foreground mt-2 font-medium">Source: {d.platform}</p>
       </div>
+      {/* Right */}
+      <UserMeta profile={item.profile} timestamp={item.created_at} userId={item.user_id} />
     </div>
   );
 };
 
-// 3. Game Activity Card (Session, Review, Status, Achievement)
-const GameActivityCard = ({ item, onGameClick }: { item: FeedItem, onGameClick: (id: string, initialData: any) => void }) => {
-  const { type, data } = item;
-  
-  // Resolve Game ID from data payload or top-level item
-  const gameId = data.game_id || item.game_id;
-  const isClickable = !!gameId;
+const GameAddedCard = ({ item }: { item: FeedItem }) => {
+  const d = item.data;
+  return (
+    <div className="flex items-center gap-4 p-4 bg-card/40 border border-border/50 rounded-2xl group">
+      {/* Left */}
+      <div className="w-16 h-20 shrink-0 rounded-lg overflow-hidden bg-muted border border-white/5">
+        <img src={getCoverUrl(d.cover_url)} className="w-full h-full object-cover" alt="" />
+      </div>
+      {/* Center */}
+      <div className="flex-1 min-w-0">
+        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest block mb-0.5">Game Acquired</span>
+        <h4 className="text-sm font-black text-foreground truncate">{d.game_title}</h4>
+        <p className="text-[11px] text-muted-foreground mt-1">
+           Added to Library • {d.platform || 'Unknown'} • {d.price > 0 ? `$${d.price.toFixed(2)}` : 'FREE'}
+        </p>
+      </div>
+      {/* Right */}
+      <UserMeta profile={item.profile} timestamp={item.created_at} userId={item.user_id} />
+    </div>
+  );
+};
 
-  const handlePreview = () => {
-    if (isClickable) {
-        onGameClick(gameId, {
-            name: data.game,
-            cover: data.cover_url ? { url: data.cover_url } : undefined
-        });
-    }
-  };
+const StatusCard = ({ item }: { item: FeedItem }) => {
+  const d = item.data;
+  const isFinished = d.new_status === 'Beat' || d.new_status === 'Completed';
   
-  // Helper to render main stat line based on type
-  const renderStatLine = () => {
-    switch (type) {
-        case 'session':
-            return (
-                <div className="flex items-center gap-2">
-                    <Clock className="text-blue-500" size={18} />
-                    <span>Played for <strong className="text-foreground">{formatFeedDuration(data.duration)}</strong></span>
-                </div>
-            );
-        case 'status':
-            return (
-                <div className="flex items-center gap-2">
-                    <Flag className="text-green-500" size={18} />
-                    <span>Updated status to <strong className="text-green-500 uppercase tracking-wider">{data.status}</strong></span>
-                </div>
-            );
-        case 'review':
-             return (
-                <div className="flex items-center gap-2">
-                    <Star className="text-purple-500 fill-purple-500" size={18} />
-                    <span>Rated <strong className="text-purple-400">{data.rating}/10</strong></span>
-                </div>
-            );
-        case 'achievement':
-             return (
-                <div className="flex items-center gap-2">
-                    <Trophy className="text-yellow-500" size={18} />
-                    <span>Unlocked <strong className="text-foreground">{data.achievement}</strong></span>
-                </div>
-            );
-        case 'import':
-            return (
-                <div className="flex items-center gap-2">
-                    <CloudDownload className="text-sky-500" size={18} />
-                    <span>Imported <strong className="text-foreground">{data.count}</strong> games</span>
-                </div>
-            );
-        default: return null;
-    }
-  };
+  return (
+    <div className={cn(
+      "flex items-center gap-4 p-4 border rounded-2xl transition-all",
+      d.new_status === 'Beat' ? "bg-cyan-500/5 border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.1)]" : 
+      d.new_status === 'Completed' ? "bg-yellow-500/5 border-yellow-500/30 shadow-[0_0_15px_rgba(234,179,8,0.1)]" :
+      "bg-card/40 border-border/50"
+    )}>
+      {/* Left */}
+      <div className="w-16 h-20 shrink-0 rounded-lg overflow-hidden bg-muted border border-white/5">
+        <img src={getCoverUrl(d.cover_url)} className="w-full h-full object-cover" alt="" />
+      </div>
+      {/* Center */}
+      <div className="flex-1 min-w-0">
+        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest block mb-0.5">Changed Status</span>
+        <h4 className="text-sm font-black text-foreground truncate">{d.game_title}</h4>
+        <div className="flex items-center gap-2 mt-2">
+           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-muted/50 border border-border/50">
+              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: getStatusColorVar(d.old_status) }} />
+              <span className="text-[10px] font-bold uppercase" style={{ color: getStatusColorVar(d.old_status) }}>{d.old_status}</span>
+           </div>
+           <ArrowRight size={10} className="text-muted-foreground" />
+           <div className={cn(
+             "flex items-center gap-1.5 px-2 py-0.5 rounded border",
+             isFinished ? "bg-primary text-primary-foreground border-primary shadow-[0_0_10px_rgba(var(--primary),0.3)]" : "bg-muted/50 border-border/50"
+           )}>
+              <div className="w-1.5 h-1.5 rounded-full bg-current" style={{ color: isFinished ? 'white' : getStatusColorVar(d.new_status) }} />
+              <span className="text-[10px] font-black uppercase" style={{ color: isFinished ? 'white' : getStatusColorVar(d.new_status) }}>{d.new_status}</span>
+           </div>
+        </div>
+      </div>
+      {/* Right */}
+      <UserMeta profile={item.profile} timestamp={item.created_at} userId={item.user_id} />
+    </div>
+  );
+};
+
+const MilestoneCard = ({ item }: { item: FeedItem }) => {
+  const d = item.data;
+  const level = Number(d.level || 1);
+  const maxRanks = Number(d.maxRanks || 5);
+  const cardStyle = getRankCardStyle(level, maxRanks);
+  
+  const material = getMaterial(level, maxRanks);
+  // Resolve icon component from string
+  // @ts-ignore
+  const IconComponent = Icons[d.icon] || Icons.Trophy;
 
   return (
-    <div className="flex flex-col sm:flex-row gap-6 p-6 bg-card/40 border border-border/60 rounded-2xl hover:bg-card/80 hover:border-primary/30 transition-all group shadow-sm">
-       {/* 1. BIG COVER */}
-       <div 
-         onClick={handlePreview}
-         className={cn(
-             "shrink-0 relative shadow-xl rounded-xl overflow-hidden w-full sm:w-32 sm:h-44 bg-muted border border-white/5",
-             isClickable && "cursor-pointer"
-         )}
-       >
-          {data.cover_url ? (
-             <img 
-               src={data.cover_url} 
-               alt={data.game} 
-               className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
-               loading="lazy" 
-             />
-          ) : (
-             <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground p-4 text-center">
-                 <Gamepad2 size={32} className="opacity-20 mb-2" />
-                 <span className="text-[10px] uppercase font-bold opacity-50">No Cover</span>
-             </div>
-          )}
-          {/* Shine effect */}
-          <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/10 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-       </div>
+    <div className={cn("flex items-center gap-4 p-4 border rounded-2xl transition-all group hover:border-primary/20 relative overflow-hidden", cardStyle)}>
+      {/* Left: Visual Badge */}
+      <div className="shrink-0 relative z-10">
+        <BadgeReality 
+          rank={level} 
+          maxRanks={maxRanks} 
+          icon={IconComponent} 
+          size="sm"
+        />
+      </div>
 
-       {/* 2. MAIN CONTENT */}
-       <div className="flex-1 flex flex-col justify-center gap-3 min-w-0">
-           {/* Title & Header */}
-           <div>
-               <div className="flex justify-between items-start gap-4">
-                   <div className="flex-1 min-w-0">
-                       <h3 
-                           onClick={handlePreview}
-                           className={cn(
-                               "text-2xl font-black text-foreground leading-tight line-clamp-2 transition-colors",
-                               isClickable ? "cursor-pointer hover:text-primary hover:underline decoration-2 underline-offset-4" : ""
-                           )}
-                       >
-                           {data.game || 'System'}
-                       </h3>
-                       <div className="flex items-center gap-3 mt-2">
-                           {data.platform && (
-                               <span className="flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider">
-                                  <Gamepad2 size={12} /> {data.platform}
-                               </span>
-                           )}
-                           {/* Mobile Timestamp fallback */}
-                           <span className="sm:hidden text-xs text-muted-foreground">
-                                {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}
-                           </span>
-                       </div>
-                   </div>
-                   
-                   {/* 3. USER META (Top Right - Desktop) */}
-                   <div className="hidden sm:block">
-                        <UserMeta profile={item.profile} timestamp={item.created_at} userId={item.user_id} />
-                   </div>
-               </div>
-           </div>
+      {/* Center: Information */}
+      <div className="flex-1 min-w-0 relative z-10">
+        <span className="text-[9px] font-black uppercase tracking-[0.2em] opacity-70 block mb-0.5">
+          {d.archetype || 'VALIS PROTOCOL'}
+        </span>
+        <h4 className="text-[10px] font-bold truncate opacity-60 uppercase tracking-tight">
+          Achieved {d.discipline || 'Collection'} Rank {level}
+        </h4>
+        <div className="text-lg font-black tracking-tighter uppercase leading-none mt-1">
+          {d.title}
+        </div>
+      </div>
 
-           {/* Stats Row (Bigger Text) */}
-           <div className="flex flex-wrap items-center gap-4 text-base text-muted-foreground font-medium">
-               {renderStatLine()}
-
-               {data.xp > 0 && (
-                   <span className="flex items-center gap-1 text-emerald-500 font-bold bg-emerald-500/10 px-2.5 py-0.5 rounded-full text-xs border border-emerald-500/20">
-                       +{data.xp} XP
-                   </span>
-               )}
-           </div>
-
-           {/* Context Row (Mood/Tags/Review Text) */}
-           <div className="flex flex-col gap-3 mt-1">
-               {/* Mood & Tags */}
-               {(data.mood || (data.tags && data.tags.length > 0)) && (
-                   <div className="flex flex-wrap items-center gap-3">
-                       {data.mood && (
-                           <span className="text-2xl drop-shadow-sm cursor-help hover:scale-110 transition-transform" title="Mood">
-                               {data.mood}
-                           </span>
-                       )}
-                       {data.tags?.map((tag: string, i: number) => (
-                           <span key={i} className="px-2.5 py-1 bg-secondary/50 text-secondary-foreground rounded-md text-xs font-bold border border-border/50">
-                               #{tag}
-                           </span>
-                       ))}
-                   </div>
-               )}
-
-               {/* Review/Note Text */}
-               {type === 'review' && data.text && (
-                    <div className="relative pl-4 border-l-4 border-purple-500/40 bg-purple-500/5 p-3 rounded-r-xl italic text-muted-foreground text-sm">
-                        <Quote size={12} className="absolute -left-1.5 -top-1.5 text-purple-500 bg-background rounded-full p-0.5" />
-                        "{data.text}"
-                    </div>
-               )}
-               {type === 'session' && data.journal && (
-                    <div className="relative pl-4 border-l-4 border-blue-500/40 bg-blue-500/5 p-3 rounded-r-xl italic text-muted-foreground text-sm">
-                        "{data.journal}"
-                    </div>
-               )}
-           </div>
-       </div>
+      {/* Right: User Identity */}
+      <div className="relative z-10">
+        <UserMeta profile={item.profile} timestamp={item.created_at} userId={item.user_id} />
+      </div>
+      
+      {/* Shimmer for High Ranks */}
+      {material === 'diamond' && (
+        <div className="absolute inset-0 -translate-x-full animate-shimmer-slow bg-gradient-to-r from-transparent via-white/20 to-transparent skew-x-12 pointer-events-none" />
+      )}
     </div>
   );
 };
+
+const ProtocolCard = ({ item }: { item: FeedItem }) => {
+  const d = item.data;
+  
+  // 1. Resolve mark definition for fallback visual data
+  const mark = GENERAL_MARKS.find(m => m.id === item.data.id || m.title === item.data.name);
+  const markId = item.data.id || mark?.id || 'unknown';
+  const visual = d.visual || mark?.visual || 'holo';
+  
+  // 2. Use shared high-fidelity logic
+  const style = getMarkVisualStyles(markId, visual as any, true);
+
+  return (
+    <div className={cn(
+      "flex items-center gap-4 p-4 border rounded-2xl transition-all relative overflow-hidden group",
+      `badge-visual-${visual}`,
+      style.card,
+      style.border
+    )}>
+      {/* Left */}
+      <div className={cn("w-14 h-14 rounded-xl flex items-center justify-center shrink-0 border shadow-inner overflow-hidden", style.iconContainer)}>
+        <div className={style.iconAnim} data-icon="zap">
+          <DynamicIcon name={d.icon || mark?.iconName || 'Zap'} size={28} />
+        </div>
+      </div>
+      {/* Center */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 mb-0.5">
+            <Zap size={10} className="text-emerald-500 fill-emerald-500 animate-pulse" />
+            <span className={cn("text-[9px] font-black uppercase tracking-[0.2em] opacity-70", style.text)}>Protocol Unlocked</span>
+        </div>
+        <h4 className={cn("text-lg font-black tracking-tight leading-none uppercase italic badge-text-title", style.text)}>{d.name}</h4>
+        <p className={cn("text-[10px] opacity-60 leading-snug font-medium italic truncate mt-1 badge-text-lore", style.subtext)}>
+          "{d.description}"
+        </p>
+      </div>
+      {/* Right */}
+      <div className="relative z-10">
+        <UserMeta profile={item.profile} timestamp={item.created_at} userId={item.user_id} />
+      </div>
+
+      {/* Decorative Shimmer for Premium Visuals */}
+      {(visual === 'holo' || visual === 'glass' || visual === 'diamond') && (
+        <div className="absolute top-0 right-0 bottom-0 w-32 bg-gradient-to-l from-white/5 to-transparent skew-x-12 -mr-8 pointer-events-none" />
+      )}
+    </div>
+  );
+};
+
+// --- MAIN FEED ---
 
 export const SocialFeed = () => {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   
-  // Preview Modal State
   const [previewGameId, setPreviewGameId] = useState<string | null>(null);
   const [previewInitialData, setPreviewInitialData] = useState<any>(null);
 
@@ -302,22 +306,18 @@ export const SocialFeed = () => {
     setIsRefreshing(true);
     try {
       const { data: rawData, error } = await supabase
-        .rpc('get_social_feed', { limit_count: 20, offset_count: 0 });
+        .rpc('get_social_feed', { limit_count: 50, offset_count: 0 });
 
       if (error) {
-         console.warn("RPC failed, falling back to raw table fetch...", error);
-         const { data: fallbackData, error: fallbackError } = await supabase
+         const { data: fallbackData } = await supabase
             .from('activities')
             .select('*')
             .order('created_at', { ascending: false })
-            .limit(20);
-         
-         if (fallbackError) throw fallbackError;
+            .limit(50);
          if (fallbackData) processData(fallbackData);
       } else {
          if (rawData) processData(rawData);
       }
-
     } catch (e) {
       console.error('Feed error:', e);
     } finally {
@@ -327,18 +327,12 @@ export const SocialFeed = () => {
   };
 
   const processData = async (rawData: any[]) => {
-      // Enrich with Profiles (Batch Fetch)
       const userIds = [...new Set(rawData.map((item: any) => item.user_id))];
-      
       let profiles: any[] = [];
       if (userIds.length > 0) {
-          const { data } = await supabase
-            .from('profiles')
-            .select('id, username, avatar_url')
-            .in('id', userIds);
+          const { data } = await supabase.from('profiles').select('id, username, avatar_url').in('id', userIds);
           profiles = data || [];
       }
-
       const enriched = rawData.map((item: any) => ({
         ...item,
         profile: item.username ? { username: item.username, avatar_url: item.avatar_url } : profiles?.find(p => p.id === item.user_id),
@@ -348,58 +342,51 @@ export const SocialFeed = () => {
 
   useEffect(() => {
     fetchFeed();
-    const subscription = supabase
-      .channel('public:activities') 
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activities' }, () => fetchFeed())
-      .subscribe();
+    const subscription = supabase.channel('public:activities').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activities' }, () => fetchFeed()).subscribe();
     return () => { subscription.unsubscribe(); };
   }, []);
   
-  const handleGameClick = (id: string, initialData: any) => {
-      setPreviewInitialData(initialData);
-      setPreviewGameId(id);
+  const renderItem = (item: FeedItem) => {
+    switch (item.type) {
+      case 'session': return <SessionCard item={item} />;
+      case 'sync': 
+      case 'import': return <SyncCard item={item} />;
+      case 'added': return <GameAddedCard item={item} />;
+      case 'status': return <StatusCard item={item} />;
+      case 'milestone': return <MilestoneCard item={item} />;
+      case 'protocol': return <ProtocolCard item={item} />;
+      default: return null;
+    }
   };
 
   return (
     <>
         <div className="bg-card/30 border border-border/50 rounded-xl h-full flex flex-col shadow-inner overflow-hidden">
-        {/* Header */}
         <div className="p-4 border-b border-border/50 flex justify-between items-center bg-background/50 backdrop-blur-md">
-            <h3 className="font-bold text-sm flex items-center gap-2">
-            <Activity size={16} className="text-primary" /> 
-            Global Activity
-            </h3>
+            <h3 className="font-bold text-sm flex items-center gap-2"><Activity size={16} className="text-primary" /> Network Feed</h3>
             <button onClick={fetchFeed} disabled={isRefreshing} className="p-1.5 hover:bg-muted rounded-md transition-colors text-muted-foreground hover:text-foreground">
                 <RefreshCw size={14} className={cn(isRefreshing && "animate-spin")} />
             </button>
         </div>
 
-        {/* Feed List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
             {loading && items.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-40 gap-3 text-muted-foreground opacity-50">
                     <RefreshCw className="animate-spin" size={24} />
-                    <span className="text-xs font-medium">Syncing feed...</span>
+                    <span className="text-xs font-medium">Calibrating telemetry...</span>
                 </div>
             ) : items.length === 0 ? (
-                <div className="text-center p-8 text-muted-foreground text-xs italic">
-                    No activity yet. Be the first to play!
-                </div>
+                <div className="text-center p-8 text-muted-foreground text-xs italic">No signal found. The void remains silent.</div>
             ) : (
                 items.map((item) => (
-                    <React.Fragment key={item.id}>
-                        {(item.type === 'milestone' || item.type === 'protocol') ? (
-                            <SystemActivityCard item={item} />
-                        ) : (
-                            <GameActivityCard item={item} onGameClick={handleGameClick} />
-                        )}
-                    </React.Fragment>
+                    <div key={item.id} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        {renderItem(item)}
+                    </div>
                 ))
             )}
         </div>
         </div>
 
-        {/* Preview Modal */}
         <GamePreviewModal 
             isOpen={!!previewGameId}
             onClose={() => setPreviewGameId(null)}

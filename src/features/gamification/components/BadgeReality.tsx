@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { motion, Variants } from 'framer-motion';
 import { LucideIcon } from 'lucide-react';
@@ -8,9 +9,10 @@ interface BadgeProps {
   maxRanks: number;
   icon: LucideIcon;
   className?: string;
+  size?: 'sm' | 'md' | 'lg';
 }
 
-export function BadgeReality({ rank, maxRanks, icon: Icon, className }: BadgeProps) {
+export function BadgeReality({ rank, maxRanks, icon: Icon, className, size = 'md' }: BadgeProps) {
   
   // --- 1. Material Logic ---
   const getMaterialClass = () => {
@@ -56,6 +58,18 @@ export function BadgeReality({ rank, maxRanks, icon: Icon, className }: BadgePro
     obsidian:"bg-[#050505] border-slate-800 text-white animate-void-surge shadow-2xl"
   };
 
+  const sizeClasses = {
+    sm: "w-12 h-12 rounded-xl",
+    md: "w-20 h-20 rounded-2xl",
+    lg: "w-32 h-32 rounded-[2.5rem]"
+  };
+
+  const iconSizes = {
+    sm: 20,
+    md: 32,
+    lg: 48
+  };
+
   // --- 3. Animation Variants ---
   // Only Obsidian gets the icon scale pulse
   const iconVariants: Variants = {
@@ -69,7 +83,8 @@ export function BadgeReality({ rank, maxRanks, icon: Icon, className }: BadgePro
 
   return (
     <div className={cn(
-      "w-20 h-20 rounded-2xl border flex items-center justify-center relative transition-all duration-300 hover:scale-105", 
+      "border flex items-center justify-center relative transition-all duration-300 hover:scale-105", 
+      sizeClasses[size],
       styles[material as keyof typeof styles], 
       className
     )}>
@@ -84,7 +99,7 @@ export function BadgeReality({ rank, maxRanks, icon: Icon, className }: BadgePro
         animate={material === 'obsidian' ? "obsidian" : "default"}
         variants={iconVariants}
       >
-        <Icon size={32} strokeWidth={material === 'copper' ? 1.5 : 2} />
+        <Icon size={iconSizes[size]} strokeWidth={material === 'copper' ? 1.5 : 2} />
       </motion.div>
     </div>
   );

@@ -1,3 +1,4 @@
+
 import { BrowserWindow } from 'electron';
 import epicClient from './EpicClient.js';
 import { addGame, getLibrary, getGameById } from '../../db/modules/games.js';
@@ -127,7 +128,8 @@ export async function syncEpicLibrary(sender) {
                       id: String(igdbId),
                       epic_id: epicSlug,
                       legacy_playtime_seconds: legacyEntries,
-                      platform_ownership: [{ id: 99002, price: 0 }]
+                      platform_ownership: [{ id: 99002, price: 0 }],
+                      skip_achievement_scan: true
                   });
               } else {
                   await addGame({
@@ -135,7 +137,8 @@ export async function syncEpicLibrary(sender) {
                       name: item.title,
                       epic_id: epicSlug,
                       legacy_playtime_seconds: legacyEntries,
-                      platform_ownership: [{ id: 99002, price: 0 }]
+                      platform_ownership: [{ id: 99002, price: 0 }],
+                      skip_achievement_scan: true
                   });
               }
           } else {
@@ -144,7 +147,8 @@ export async function syncEpicLibrary(sender) {
                   name: item.title,
                   epic_id: epicSlug,
                   legacy_playtime_seconds: legacyEntries,
-                  platform_ownership: [{ id: 99002, price: 0 }]
+                  platform_ownership: [{ id: 99002, price: 0 }],
+                  skip_achievement_scan: true
               });
           }
           totalAdded++;
@@ -152,7 +156,8 @@ export async function syncEpicLibrary(sender) {
           await addGame({
             ...existingGame,
             legacy_playtime_seconds: legacyEntries,
-            epic_id: epicSlug
+            epic_id: epicSlug,
+            skip_achievement_scan: true
           });
       }
 
@@ -169,6 +174,9 @@ export async function syncEpicLibrary(sender) {
       // Throttle to be polite to IGDB
       await new Promise(r => setTimeout(r, 400));
   }
+
+  // 6. BATCH SOCIAL SIGNAL
+  sender.send('SOCIAL_BROADCAST_SYNC', { platform: 'Epic Games', added: totalAdded, achievements: totalSyncedAchievements });
 
   sender.send('steam:sync-progress', { message: 'Sync Complete!', percent: 100 });
   return { success: true, added: totalAdded, synced: totalSyncedAchievements };

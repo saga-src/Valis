@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/images/logo.png" alt="Valis Logo" width="120" height="120" />
   <h1>VALIS</h1>
-  <p><strong>v1.1.0 | Digital Game Journal</strong></p>
+  <p><strong>v1.1.1 | Digital Game Journal</strong></p>
   
   <p>
     <a href="#features">Features</a> •

@@ -1,22 +1,19 @@
 export const RELEASE_NOTES = {
-  version: "1.1.0",
-  title: "Game Launcher & Library Tags",
+  version: "1.1.1",
+  title: "Social Feed Redesign & Gamification Rework",
+  description: "This update redefines the 'Social' and 'Progression' pillars of Valis. The social feed has been rebuilt for clarity, and the Gamification engine has been refactored to prioritize *your* activity in the app, preventing inflated stats from imported libraries.",
   features: [
     {
-      title: "🚀 Game Launcher",
-      description: "Valis is now a full launcher. Link your executables and launch games directly from the Quick Play tab or by clicking the cover (configurable in Settings)."
+      title: "📰 Feed Redesign",
+      description: "A complete visual overhaul with compact, modern cards. Milestones and Protocol unlocks now have distinct 'Copper to Obsidian' styles that visually pop. The Feed is now the default landing tab, putting your activity history first."
     },
     {
-      title: "🏷️ Advanced Tagging",
-      description: "Organize your library with custom tags. Use the new Smart Filters to Include (Green) or Exclude (Red) specific tags to create the perfect view."
+      title: "🏆 Gamification Rework",
+      description: "Progression now rewards *active usage* (Valis-only stats). The Progression Tree has nearly doubled to 21 disciplines, adding tracks like 'Operator' (Launches), 'Titan' (Long Games), 'Eclectic' (Genres), and 'Librarian' (Library Tags)."
     },
     {
-      title: "😶 Flexible Sessions",
-      description: "Added a 'No Emotion' option for sessions, so you can track playtime without forced sentiment. It is now the default selection."
-    },
-    {
-      title: "⚡ Interaction Overhaul",
-      description: "Customize your flow: Map 'Cover Click' and 'Hover Button' to View Details, Quick Play, or Launch Game."
+      title: "✨ Quality of Life",
+      description: "Smart Quick Play now auto-selects the first available platform executable to save you a click. Plus, actions like launches and manual adds are tracked in real-time for instant progression feedback."
     }
   ]
 };

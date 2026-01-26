@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import Modal from '../../../components/ui/Modal';
 import { openFileDialog } from '../../../lib/storage';
@@ -48,7 +49,7 @@ const STATIC_PLATFORM_NAMES: Record<number, string> = {
 
 export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuccess }: EditGameModalProps) {
   const { toast } = useToast();
-  const { broadcast } = useSocialBroadcast();
+  const { broadcastStatusChange } = useSocialBroadcast();
   const { user } = useAuth();
   const invalidateCache = useLibraryStore(state => state.invalidateCache);
 
@@ -288,6 +289,17 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
 
     setIsSaving(true);
     try {
+        // Broadcast status change if it actually changed
+        // This is the definitive place for manual status change broadcasting
+        if (game.status !== status) {
+            broadcastStatusChange(
+                game.title || game.name,
+                game.status,
+                status,
+                game.cover_url || game.cover?.url
+            );
+        }
+
         await onSave(updated);
         
         // Persist Normalized Tags

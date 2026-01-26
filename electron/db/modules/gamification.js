@@ -1,4 +1,3 @@
-
 import { rawDb, db } from '../client.js';
 import { PROGRESSION_TREE } from '../../lib/internal_milestones.js';
 
@@ -7,97 +6,166 @@ import { PROGRESSION_TREE } from '../../lib/internal_milestones.js';
 export async function getMetrics() {
   const metrics = {};
 
-  // 1. Total Games
+  // --- 1. THE ARCHIVIST ---
+  
+  // Collector: Total Games
   const gamesRes = rawDb.prepare('SELECT count(*) as count FROM library').get();
   metrics.total_games = gamesRes ? gamesRes.count : 0;
 
-  // 2. Tagged Sessions (Notes not empty)
+  // Taxonomist: Tagged Sessions (Notes not empty)
   const taggedRes = rawDb.prepare("SELECT count(*) as count FROM sessions WHERE notes IS NOT NULL AND notes != '[]' AND notes != ''").get();
   metrics.tagged_sessions = taggedRes ? taggedRes.count : 0;
 
-  // 3. Distinct Sources (Count unique store_ids in library_platforms)
-  // We use store_id from library_platforms as a proxy for source diversity
+  // Integrator: Distinct Sources (Unique store_ids)
   const sourcesRes = rawDb.prepare('SELECT count(distinct store_id) as count FROM library_platforms WHERE store_id IS NOT NULL').get();
   metrics.distinct_sources = sourcesRes ? sourcesRes.count : 0;
 
-  // 4. Total Reviews (Final Score Set)
-  const reviewsRes = rawDb.prepare("SELECT count(*) as count FROM library WHERE final_score IS NOT NULL").get();
-  metrics.total_reviews = reviewsRes ? reviewsRes.count : 0;
+  // Purger: Dropped Games
+  const droppedRes = rawDb.prepare("SELECT count(*) as count FROM library WHERE status = 'Dropped'").get();
+  metrics.dropped_games = droppedRes ? droppedRes.count : 0;
 
-  // 5. Critical Reviews (Parse Metadata)
-  // SQLite JSON support varies, so we fetch all review_metadata and parse in JS for safety
-  const metaRows = rawDb.prepare("SELECT review_metadata FROM library WHERE review_metadata IS NOT NULL").all();
-  let criticalCount = 0;
-  for (const row of metaRows) {
+  // Fabricator: Manual Adds (Count from user_stats incremented on manual add)
+  const fabRes = rawDb.prepare("SELECT value FROM user_stats WHERE key = 'manual_games_added'").get();
+  metrics.manual_games_added = fabRes ? fabRes.value : 0;
+
+  // Librarian: Games with Tags (Using junction table)
+  try {
+    const tagsRes = rawDb.prepare("SELECT count(distinct game_id) as count FROM game_library_tags").get();
+    metrics.games_with_tags = tagsRes ? tagsRes.count : 0;
+  } catch (e) {
+    metrics.games_with_tags = 0; // Fallback if table missing during migration
+  }
+
+  // --- 2. THE CRITIC ---
+
+  // Fetch all metadata to parse in JS (Handles Journalist, Analyst, Pundit)
+  const metaRows = rawDb.prepare("SELECT review_metadata FROM library WHERE review_metadata IS NOT NULL AND review_metadata != '' AND review_metadata != 'null'").all();
+
+  let journalistCount = 0; // Text Reviews
+  let analystCount = 0;    // Total Reviews (Rating OR Score)
+  let punditCount = 0;     // Critical Mode
+
+  // Also fetch star ratings for Analyst backfill
+  const ratingRows = rawDb.prepare("SELECT count(*) as count FROM library WHERE rating > 0").get();
+  let starRatingCount = ratingRows ? ratingRows.count : 0; 
+
+  metaRows.forEach(row => {
     try {
       const meta = JSON.parse(row.review_metadata);
-      if (meta && meta.method === 'CRITICAL') {
-        criticalCount++;
+      if (meta && typeof meta === 'object') {
+        // Journalist: Check for text notes
+        if (meta.notes && typeof meta.notes === 'string' && meta.notes.trim().length > 0) {
+          journalistCount++;
+        }
+        // Pundit: Check for Critical Method
+        if (meta.method === 'CRITICAL') {
+          punditCount++;
+        }
+        // Analyst: Check if Calculated Average exists in metadata
+        if (meta.calculated_average > 0) {
+          analystCount++;
+        }
       }
-    } catch (e) {
-      // ignore parse errors
-    }
-  }
-  metrics.critical_reviews = criticalCount;
+    } catch (e) {}
+  });
 
-  // 6. Shared Cards (From User Stats)
+  metrics.text_reviews = journalistCount;
+  metrics.critical_reviews = punditCount;
+  // Analyst counts both Metadata Reviews AND Star Ratings (Max to avoid double counting if they overlap, or sum if distinct? Usually overlap. We'll use the higher number to be safe).
+  metrics.total_reviews = Math.max(analystCount, starRatingCount);
+
+  // Broadcaster: Shared Cards (User Stat)
   const sharedRes = rawDb.prepare("SELECT value FROM user_stats WHERE key = 'metric_shared_cards'").get();
   metrics.shared_cards = sharedRes ? sharedRes.value : 0;
 
-  // 7. Games Beat
+
+  // --- 3. THE COMPLETIONIST ---
+
+  // Finisher: Games Beat
   const beatRes = rawDb.prepare("SELECT count(*) as count FROM library WHERE status = 'Beat'").get();
   metrics.games_beat = beatRes ? beatRes.count : 0;
 
-  // 8. Games Completed
-  const completedRes = rawDb.prepare("SELECT count(*) as count FROM library WHERE status = 'Completed'").get();
+  // Perfectionist: Games Completed (Includes 100% alias)
+  const completedRes = rawDb.prepare("SELECT count(*) as count FROM library WHERE status IN ('Completed', '100%')").get();
   metrics.games_completed = completedRes ? completedRes.count : 0;
 
-  // 9. Total Achievements
+  // Hoarder: Total Achievements
   const achRes = rawDb.prepare("SELECT count(*) as count FROM achievements WHERE unlocked = 1").get();
   metrics.total_achievements = achRes ? achRes.count : 0;
 
-  // 10. Longest Session (Hours)
+  // Titan: Long Games Beaten (> 30 Hours / 108000 seconds)
+  const titanRes = rawDb.prepare("SELECT count(*) as count FROM library WHERE status IN ('Beat', 'Completed', '100%') AND playtime_seconds >= 108000").get();
+  metrics.long_games_beaten = titanRes ? titanRes.count : 0;
+
+  // Veteran: Post-Game Sessions (Count from user_stats incremented on save)
+  const vetRes = rawDb.prepare("SELECT value FROM user_stats WHERE key = 'veteran_sessions'").get();
+  metrics.post_game_sessions = vetRes ? vetRes.value : 0;
+
+  // Ascendant: Total XP
+  const xpRes = rawDb.prepare("SELECT value FROM user_stats WHERE key = 'total_xp'").get();
+  metrics.total_xp = xpRes ? xpRes.value : 0;
+
+
+  // --- 4. THE TIMEKEEPER ---
+
+  // Diver: Longest Session (Hours)
   const sessionMaxRes = rawDb.prepare("SELECT max(duration_seconds) as max FROM sessions").get();
   metrics.longest_session = sessionMaxRes && sessionMaxRes.max ? sessionMaxRes.max / 3600 : 0;
 
-  // 11. Max Hours on One Game
-  // Sum legacy + tracked for each game, find max
-  // SQLite aggregation: MAX(playtime_seconds + legacy_playtime_seconds)
-  const maxPlaytimeRes = rawDb.prepare("SELECT max(playtime_seconds + legacy_playtime_seconds) as max FROM library").get();
+  // Loyalist: Max Hours on One Game (VALIS ONLY - Removed legacy_playtime_seconds)
+  const maxPlaytimeRes = rawDb.prepare("SELECT max(playtime_seconds) as max FROM library").get();
   metrics.max_hours_one_game = maxPlaytimeRes && maxPlaytimeRes.max ? maxPlaytimeRes.max / 3600 : 0;
 
-  // 12. Current Streak
-  // Get all session dates
+  // Operator: Launcher Starts (Count from user_stats incremented on launch)
+  const launcherRes = rawDb.prepare("SELECT value FROM user_stats WHERE key = 'launcher_starts'").get();
+  metrics.launcher_starts = launcherRes ? launcherRes.value : 0;
+
+  // Eclectic: Unique Genres (Valis Playtime Only)
+  // Only counts genres from games that have > 0 seconds of tracked playtime.
+  const genreRows = rawDb.prepare(`
+    SELECT g.genres 
+    FROM library l 
+    JOIN games g ON l.game_id = g.id 
+    WHERE l.playtime_seconds > 0 
+    AND g.genres IS NOT NULL
+  `).all();
+
+  const uniqueGenreIds = new Set();
+  genreRows.forEach(row => {
+    try {
+      const gList = JSON.parse(row.genres);
+      if (Array.isArray(gList)) {
+        gList.forEach(genre => {
+          // IGDB genres are objects { id, name }, we track unique IDs
+          if (genre.id) uniqueGenreIds.add(genre.id);
+        });
+      }
+    } catch (e) {
+      // Ignore malformed JSON
+    }
+  });
+  metrics.unique_genres = uniqueGenreIds.size;
+
+  // Regular: Current Streak (Existing Logic)
   const sessionDatesRes = rawDb.prepare("SELECT start_time FROM sessions ORDER BY start_time DESC").all();
-  
   if (sessionDatesRes.length === 0) {
     metrics.current_streak = 0;
   } else {
     const dates = sessionDatesRes.map(row => new Date(row.start_time).toISOString().split('T')[0]);
-    // Deduplicate
     const uniqueDates = [...new Set(dates)];
-    
-    // Check if today or yesterday is present
     const today = new Date().toISOString().split('T')[0];
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
     
-    let streak = 0;
-    
-    // If most recent is neither today nor yesterday, streak is broken (0)
     if (uniqueDates[0] !== today && uniqueDates[0] !== yesterday) {
       metrics.current_streak = 0;
     } else {
-      // Calculate consecutive days backwards from uniqueDates[0]
-      // We iterate the sorted unique dates
+      let streak = 1;
       let currentDate = new Date(uniqueDates[0]);
-      streak = 1;
-      
       for (let i = 1; i < uniqueDates.length; i++) {
         const prevDateStr = uniqueDates[i];
         const expectedPrev = new Date(currentDate);
         expectedPrev.setDate(expectedPrev.getDate() - 1);
         const expectedPrevStr = expectedPrev.toISOString().split('T')[0];
-        
         if (prevDateStr === expectedPrevStr) {
           streak++;
           currentDate = expectedPrev;
@@ -245,5 +313,97 @@ export async function getGamificationStatus() {
     unlockedMarks: unlockedMarksRows.map(r => r.id),
     tree: PROGRESSION_TREE, // Send the Source of Truth to frontend
     newUnlocks // EXPOSED
+  };
+}
+
+// Define the current target version for Milestones logic
+const CURRENT_MIGRATION_VERSION = 111; // Represents v1.1.1 Update
+
+export async function runGamificationMigration() {
+  console.log('[Migration] Checking Milestone Schema Version...');
+
+  // 1. Get the last applied version from system_meta
+  const metaRow = await db.selectFrom('system_meta')
+    .select('value')
+    .where('key', '=', 'milestone_migration_version')
+    .executeTakeFirst();
+
+  const lastVersion = metaRow ? parseInt(metaRow.value, 10) : 0;
+
+  // 2. Check if we need to migrate
+  if (lastVersion >= CURRENT_MIGRATION_VERSION) {
+    return { success: false, reason: 'already_up_to_date', version: lastVersion };
+  }
+
+  console.log(`[Migration] Updating Milestones from v${lastVersion} to v${CURRENT_MIGRATION_VERSION}...`);
+
+  // 1. Clear Deprecated Data
+  await db.deleteFrom('unlocked_tiers').execute();
+  
+  // 2. Calculate Session XP (0.2 XP per minute)
+  const sessionRes = rawDb.prepare("SELECT sum(duration_seconds) as total FROM sessions").get();
+  const totalSeconds = sessionRes ? sessionRes.total : 0;
+  const sessionXP = Math.floor((totalSeconds / 60) * 0.2);
+
+  // 3. Calculate Status XP (Beat=250, Completed=1000)
+  const beatRes = rawDb.prepare("SELECT count(*) as count FROM library WHERE status = 'Beat'").get();
+  const completedRes = rawDb.prepare("SELECT count(*) as count FROM library WHERE status = 'Completed' OR status = '100%'").get(); // normalizing 100%
+  const statusXP = ((beatRes?.count || 0) * 250) + ((completedRes?.count || 0) * 1000);
+
+  // 4. Phase 1 Sync: Unlock Badges based on Non-XP Metrics
+  // We need to set a temporary total_xp to session+status so syncProgress doesn't fail if it relies on it
+  await incrementUserStat('total_xp', (sessionXP + statusXP) * -1); // Reset to 0 roughly
+  await incrementUserStat('total_xp', (sessionXP + statusXP));
+  
+  await syncProgress(); // This fills unlocked_tiers with Collector, Journalist, etc.
+
+  // 5. Calculate Rank XP from the newly unlocked tiers
+  // We need to fetch all unlocked IDs and map them to their XP values from the TREE
+  const unlockedRows = rawDb.prepare("SELECT id FROM unlocked_tiers").all();
+  let rankXP = 0;
+  
+  // Build Lookup
+  const tierXpMap = {};
+  PROGRESSION_TREE.forEach(arc => {
+    arc.disciplines.forEach(disc => {
+        disc.tiers.forEach(tier => {
+            tierXpMap[`${disc.id}_${tier.level}`] = tier.xp;
+        });
+    });
+  });
+
+  unlockedRows.forEach(row => {
+    rankXP += (tierXpMap[row.id] || 0);
+  });
+
+  // 6. Final Total XP
+  const finalTotalXP = sessionXP + statusXP + rankXP;
+  
+  // Force Update user_stats
+  await db.insertInto('user_stats')
+    .values({ key: 'total_xp', value: finalTotalXP, updated_at: new Date().toISOString() })
+    .onConflict(oc => oc.column('key').doUpdateSet({ value: finalTotalXP, updated_at: new Date().toISOString() }))
+    .execute();
+
+  await db.insertInto('user_stats')
+    .values({ key: 'current_xp', value: finalTotalXP, updated_at: new Date().toISOString() })
+    .onConflict(oc => oc.column('key').doUpdateSet({ value: finalTotalXP, updated_at: new Date().toISOString() }))
+    .execute();
+
+  // 7. Phase 2 Sync: Unlock Ascendant Badges (which rely on the now-correct total_xp)
+  const finalResult = await syncProgress();
+
+  // 8. Update Version
+  await db.insertInto('system_meta')
+    .values({ key: 'milestone_migration_version', value: String(CURRENT_MIGRATION_VERSION) })
+    .onConflict(oc => oc.column('key').doUpdateSet({ value: String(CURRENT_MIGRATION_VERSION) }))
+    .execute();
+
+  console.log(`[Migration] Complete. Total XP: ${finalTotalXP} (Session: ${sessionXP}, Status: ${statusXP}, Rank: ${rankXP})`);
+
+  return { 
+    success: true, 
+    newUnlocks: finalResult.newUnlocks,
+    stats: { sessionXP, statusXP, rankXP, total: finalTotalXP }
   };
 }
