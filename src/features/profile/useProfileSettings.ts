@@ -9,6 +9,8 @@ export interface ProfileSettings {
   highlightBadgeId: string | null;
   favorites: (string | null)[];
   obsessions: (string | null)[];
+  pinned_badges: string[];
+  pinned_artifacts: string[];
 }
 
 const DEFAULT_PROFILE: ProfileSettings = {
@@ -19,7 +21,9 @@ const DEFAULT_PROFILE: ProfileSettings = {
   avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Felix",
   highlightBadgeId: null,
   favorites: [null, null, null, null, null],
-  obsessions: [null, null, null, null, null]
+  obsessions: [null, null, null, null, null],
+  pinned_badges: [],
+  pinned_artifacts: []
 };
 
 export const useProfileSettings = () => {

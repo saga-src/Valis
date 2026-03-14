@@ -2,21 +2,23 @@ import React, { useState, useEffect, useRef } from 'react';
 import Modal from '../../components/ui/Modal';
 import { Badge } from '../gamification/logic/types';
 import { ProfileSettings } from './useProfileSettings';
-import { Save, User, Tag, Check, Upload, Loader2, PenLine } from 'lucide-react';
+import { Save, User, Tag, Check, Upload, Loader2, PenLine, Database } from 'lucide-react';
 import { cn } from '../../lib/utils/cn';
 import { supabase } from '../../lib/cloud/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { GENERAL_MARKS } from '../gamification/logic/generalMarks';
 
 interface EditProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentSettings: ProfileSettings;
   unlockedBadges: Badge[];
+  unlockedArtifacts: string[];
   onSave: (settings: Partial<ProfileSettings>) => void;
 }
 
-export default function EditProfileModal({ isOpen, onClose, currentSettings, unlockedBadges, onSave }: EditProfileModalProps) {
+export default function EditProfileModal({ isOpen, onClose, currentSettings, unlockedBadges, unlockedArtifacts, onSave }: EditProfileModalProps) {
   const { user, refreshProfile } = useAuth();
   const { toast } = useToast();
   const [formData, setFormData] = useState(currentSettings);
@@ -50,8 +52,8 @@ export default function EditProfileModal({ isOpen, onClose, currentSettings, unl
 
     setIsSaving(true);
     try {
-        // 1. Update Supabase
-        const { error } = await supabase
+        // 1. Update Identity in 'profiles'
+        const { error: profileError } = await supabase
             .from('profiles')
             .update({
                 display_name: formData.displayName,
@@ -62,9 +64,20 @@ export default function EditProfileModal({ isOpen, onClose, currentSettings, unl
             })
             .eq('id', user.id);
 
-        if (error) throw error;
+        if (profileError) throw profileError;
 
-        // 2. Notify User & Local Update
+        // 2. Update Showcase Preferences in 'player_stats'
+        const { error: statsError } = await supabase
+            .from('player_stats')
+            .update({
+                pinned_badges: formData.pinned_badges,
+                pinned_artifacts: formData.pinned_artifacts
+            })
+            .eq('user_id', user.id);
+            
+        if (statsError) throw statsError;
+
+        // 3. Notify User & Local Update
         toast.success("Profile updated successfully!");
         onSave(formData);
         onClose();
@@ -201,6 +214,84 @@ export default function EditProfileModal({ isOpen, onClose, currentSettings, unl
                       {formData.highlightBadgeId === badge.id && <Check size={12} className="ml-auto text-primary" />}
                     </button>
                  ))}
+              </div>
+           </div>
+        </div>
+
+        {/* --- VISIBILITY SETTINGS --- */}
+        <div className="space-y-4 pt-4 border-t border-border/50">
+           <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">Showcase Customization</h3>
+           
+           {/* Milestone Selector */}
+           <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Visible Milestones (Select to Show)</label>
+              <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-2 bg-muted/20 rounded-lg border border-border/50">
+                 {unlockedBadges.map(badge => (
+                    <button
+                      key={badge.id}
+                      type="button"
+                      onClick={() => {
+                        const current = formData.pinned_badges || [];
+                        const exists = current.includes(badge.id);
+                        setFormData({
+                            ...formData,
+                            pinned_badges: exists 
+                                ? current.filter(id => id !== badge.id)
+                                : [...current, badge.id]
+                        });
+                      }}
+                      className={cn(
+                          "p-2 rounded text-xs font-bold text-left flex items-center gap-2 transition-colors",
+                          (formData.pinned_badges || []).includes(badge.id)
+                              ? "bg-primary/20 text-primary border border-primary/50"
+                              : "bg-card text-muted-foreground border border-border opacity-50 hover:opacity-100"
+                      )}
+                    >
+                       <Check size={12} className={cn("opacity-0", (formData.pinned_badges || []).includes(badge.id) && "opacity-100")} />
+                       <span className="truncate">{badge.label || (badge as any).title}</span>
+                    </button>
+                 ))}
+              </div>
+           </div>
+
+           {/* Artifact Selector */}
+           <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                 <Database size={12} /> Visible Artifacts (Select to Show)
+              </label>
+              <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-2 bg-muted/20 rounded-lg border border-border/50">
+                 {GENERAL_MARKS.filter(m => unlockedArtifacts.includes(m.id)).map(mark => (
+                    <button
+                      key={mark.id}
+                      type="button"
+                      onClick={() => {
+                        const current = formData.pinned_artifacts || [];
+                        const exists = current.includes(mark.id);
+                        setFormData({
+                            ...formData,
+                            pinned_artifacts: exists 
+                                ? current.filter(id => id !== mark.id)
+                                : [...current, mark.id]
+                        });
+                      }}
+                      className={cn(
+                          "p-2 rounded text-xs font-bold text-left flex items-center gap-2 transition-colors",
+                          (formData.pinned_artifacts || []).includes(mark.id)
+                              ? "bg-cyan-500/20 text-cyan-500 border border-cyan-500/50"
+                              : "bg-card text-muted-foreground border border-border opacity-50 hover:opacity-100"
+                      )}
+                    >
+                       <Check size={12} className={cn("opacity-0", (formData.pinned_artifacts || []).includes(mark.id) && "opacity-100")} />
+                       <span className="truncate">{mark.title}</span>
+                    </button>
+                 ))}
+                 
+                 {/* Fallback if no artifacts are unlocked */}
+                 {unlockedArtifacts.length === 0 && (
+                     <div className="col-span-2 text-center text-xs text-muted-foreground italic py-4 border-2 border-dashed border-border/50 rounded">
+                         No artifacts unlocked yet.
+                     </div>
+                 )}
               </div>
            </div>
         </div>

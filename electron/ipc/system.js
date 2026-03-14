@@ -1,4 +1,4 @@
-import { ipcMain, Notification, app } from 'electron';
+import { ipcMain, Notification, app, shell } from 'electron';
 import { handleImportSessions, handleExportSessions } from '../lib/excel.js';
 import FactoryResetService from '../services/FactoryResetService.js';
 import path from 'path';
@@ -36,6 +36,20 @@ export function registerSystemHandlers() {
   // Excel Export
   ipcMain.handle('excel:export-sessions', async () => {
     return await handleExportSessions();
+  });
+
+  // Open file in Explorer/Finder
+  ipcMain.handle('system:open-explorer', async (event, filePath) => {
+    if (!filePath) return { success: false, error: 'No path provided' };
+    try {
+      // If it's a file, show it in folder. If it's a folder, open it.
+      if (fs.existsSync(filePath)) {
+          shell.showItemInFolder(filePath);
+      }
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
   });
 
   // Factory Reset

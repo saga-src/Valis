@@ -27,6 +27,12 @@ export interface ProfileViewModel {
   perfect_games: Array<{ title: string; cover: string; achievements: string }>; // Map from completed_games
   beaten_games_list: Array<{ title: string; cover: string; score: number }>; // Map from beaten_games
   
+  // New: Preferences
+  preferences?: {
+    pinned_badges: string[];
+    pinned_artifacts: string[];
+  };
+
   // New: Current Obsession
   current_obsession?: {
     title: string;
@@ -117,6 +123,12 @@ export const useProfileData = (targetUserId?: string) => {
           perfect_games: stats.completed_games || [],
           beaten_games_list: stats.beaten_games || [],
           
+          // Preferences
+          preferences: {
+              pinned_badges: stats.pinned_badges || [],
+              pinned_artifacts: stats.pinned_artifacts || []
+          },
+
           // Current Obsession
           current_obsession: stats.current_obsession ? {
               title: stats.current_obsession.title,

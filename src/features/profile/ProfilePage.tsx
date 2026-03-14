@@ -51,7 +51,8 @@ export const ProfilePage: React.FC = () => {
          perfect_games: localProfile.showcase,
          milestones: {}, // Local stats not currently mapped to milestone objects
          artifacts: [],   // Local artifacts not implemented yet
-         current_obsession: null
+         current_obsession: null,
+         preferences: localProfile.preferences
      };
   } else if (cloudProfile) {
      // Map Cloud Data to UI Model
@@ -94,7 +95,13 @@ export const ProfilePage: React.FC = () => {
         beaten: cloudProfile.beaten_games_list || [],
         
         // Current Obsession
-        current_obsession: cloudProfile.current_obsession
+        current_obsession: cloudProfile.current_obsession,
+
+        // Preferences
+        preferences: {
+            pinned_badges: cloudProfile.preferences?.pinned_badges || [],
+            pinned_artifacts: cloudProfile.preferences?.pinned_artifacts || []
+        }
      };
   }
 
@@ -242,44 +249,41 @@ export const ProfilePage: React.FC = () => {
         className={!isSelf ? "mt-6" : ""}
       />
 
-      {/* 3. Main Content Grid */}
-      <div className="max-w-[1600px] mx-auto p-6 lg:p-8">
-        <div className="flex flex-col xl:flex-row gap-10">
-          
-          {/* Left Column: The Museum */}
-          <div className="flex-1 min-w-49% space-y-8">
-             {/* Beaten Games Shelf */}
-             <BeatenGamesShelf 
-                games={displayProfile.beaten} 
-                title="Beaten Games" 
-             />
+      {/* 3. Main Content (Forced Vertical Layout) */}
+      <div className="max-w-[1200px] mx-auto p-6 lg:p-8 space-y-8">
+        
+        <div className="flex flex-col gap-8 w-full min-w-0">
+           {/* 1. Current Obsession */}
+           <CurrentObsessionCard data={displayProfile.current_obsession} />
+           
+           {/* 2. Milestones */}
+           <MilestoneWallet 
+              badges={
+                  (displayProfile as any).preferences?.pinned_badges?.length > 0 
+                  ? milestoneBadges.filter(b => (displayProfile as any).preferences.pinned_badges.includes(b.id))
+                  : milestoneBadges
+              } 
+              title="Career Milestones" 
+              layout="row" 
+           />
 
-             {/* Completed Games */}
-             <TrophyShowcase 
-                games={displayProfile.perfect_games} 
-                title="Completed Games"
-                onGameClick={(id) => console.log("Navigate to game", id)}
-             />
-          </div>
+           {/* 3. Journal Entries */}
+           <BeatenGamesShelf games={displayProfile.beaten} title="Journal Entries" />
+           
+           {/* 4. Trophy Case */}
+           <TrophyShowcase games={displayProfile.perfect_games} title="Trophy Case" />
 
-          {/* Right Column: The Meta-Identity */}
-          <div className="flex-1 xl:w-51% shrink-0 space-y-8">
-             
-             {/* Top Slot: Current Obsession */}
-             <CurrentObsessionCard data={displayProfile.current_obsession} />
-
-             {/* Mid Slot: Milestones (Grid Layout) */}
-             <MilestoneWallet 
-                badges={milestoneBadges} 
-                title="Career Milestones" 
-                layout="grid" 
-             />
-
-             {/* Bottom Slot: Artifacts */}
-             <ProtocolArtifactsWallet artifactIds={displayProfile.artifacts} />
-          </div>
-
+           {/* 5. Artifacts */}
+           <ProtocolArtifactsWallet 
+              artifactIds={
+                  (displayProfile as any).preferences?.pinned_artifacts?.length > 0
+                  ? displayProfile.artifacts.filter((id: string) => (displayProfile as any).preferences.pinned_artifacts.includes(id))
+                  : displayProfile.artifacts
+              }
+              fullWidth={true}
+           />
         </div>
+
       </div>
 
       {/* Edit Modal (Only for Self) */}
@@ -295,9 +299,12 @@ export const ProfilePage: React.FC = () => {
             avatarUrl: displayProfile.identity.avatar_url,
             highlightBadgeId: null, 
             favorites: [],
-            obsessions: []
+            obsessions: [],
+            pinned_badges: (displayProfile as any).preferences?.pinned_badges || [],
+            pinned_artifacts: (displayProfile as any).preferences?.pinned_artifacts || []
           }}
           unlockedBadges={milestoneBadges as any[]} 
+          unlockedArtifacts={displayProfile.artifacts}
           onSave={async (newSettings) => {
               setIsEditing(false);
               if (isGuest) refreshLocal();
@@ -319,7 +326,9 @@ export const ProfilePage: React.FC = () => {
             avatarUrl: displayProfile.identity.avatar_url,
             highlightBadgeId: null,
             favorites: [],
-            obsessions: []
+            obsessions: [],
+            pinned_badges: (displayProfile as any).preferences?.pinned_badges || [],
+            pinned_artifacts: (displayProfile as any).preferences?.pinned_artifacts || []
           }}
           profile={{
               level: displayProfile.leveling.level,

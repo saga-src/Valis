@@ -1,6 +1,5 @@
-
 import React from 'react';
-import { Share2, Edit2, Shield } from 'lucide-react';
+import { Share2, Edit2, Shield, User, PenLine } from 'lucide-react';
 import { cn } from '../../../lib/utils/cn';
 
 interface ProfileHeroProps {
@@ -29,6 +28,7 @@ export const ProfileHero: React.FC<ProfileHeroProps> = ({
   onShare
 }) => {
   const progress = Math.min(100, Math.max(0, (currentXP / nextLevelXP) * 100));
+  const isEditable = !!onEdit;
 
   return (
     <div className="relative w-full h-[340px] bg-zinc-900 overflow-hidden group rounded-b-3xl shadow-2xl border-b border-white/5">
@@ -52,12 +52,28 @@ export const ProfileHero: React.FC<ProfileHeroProps> = ({
           
           {/* Avatar Cluster */}
           <div className="relative shrink-0">
-            <div className="w-32 h-32 rounded-full border-4 border-background bg-zinc-800 shadow-2xl overflow-hidden relative z-10">
-              <img 
-                src={avatarUrl} 
-                alt={username} 
-                className="w-full h-full object-cover" 
-              />
+            <div className="w-32 h-32 rounded-full bg-card border-4 border-background shadow-xl overflow-hidden flex items-center justify-center relative group z-10">
+              {avatarUrl ? (
+                  <img 
+                      src={avatarUrl} 
+                      alt={username} 
+                      className="w-full h-full object-cover"
+                  />
+              ) : (
+                  <div className="w-full h-full bg-muted flex items-center justify-center">
+                      <User size={40} className="text-muted-foreground/50" />
+                  </div>
+              )}
+              
+              {/* Edit Overlay (Only if editable) */}
+              {isEditable && (
+                  <button 
+                      onClick={onEdit}
+                      className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white"
+                  >
+                      <PenLine size={20} />
+                  </button>
+              )}
             </div>
             {/* Level Badge */}
             <div className="absolute -bottom-2 -right-2 bg-primary text-primary-foreground font-black text-lg w-10 h-10 flex items-center justify-center rounded-full border-4 border-background z-20 shadow-lg">

@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('api', {
   getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
   openExternal: (url) => ipcRenderer.invoke('app:open-external', url),
   openSteamApiKeyPage: () => ipcRenderer.invoke('open-steam-apikey-page'),
+  openExplorer: (filePath) => ipcRenderer.invoke('system:open-explorer', filePath),
   
   refreshMetadata: (options) => ipcRenderer.invoke('db:refresh-metadata', options),
   onMetadataProgress: (callback) => {

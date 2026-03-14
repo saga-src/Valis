@@ -16,6 +16,7 @@ interface GameCardProps {
   playtime?: number; // Legacy prop
   libraryAction: 'details' | 'play';
   theme: string;
+  onContextMenu?: (e: React.MouseEvent, game: any) => void;
 }
 
 const getStatusIndicator = (status: string, isStealth: boolean) => {
@@ -35,7 +36,8 @@ const getStatusIndicator = (status: string, isStealth: boolean) => {
 export const GameCard: React.FC<GameCardProps> = ({ 
     game, 
     settings, 
-    theme 
+    theme,
+    onContextMenu
 }) => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -123,6 +125,12 @@ export const GameCard: React.FC<GameCardProps> = ({
           e.preventDefault();
           handleClick();
           performAction(coverClickAction);
+      }}
+      onContextMenu={(e) => {
+          if (onContextMenu) {
+              e.preventDefault(); // Stop browser context menu
+              onContextMenu(e, game);
+          }
       }}
       className={cn(
         "group relative flex flex-col overflow-hidden transition-all duration-300 h-full border text-card-foreground cursor-pointer",

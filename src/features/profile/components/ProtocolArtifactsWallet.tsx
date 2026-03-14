@@ -1,14 +1,15 @@
-
 import React from 'react';
 import { GENERAL_MARKS } from '../../gamification/logic/generalMarks';
 import { GeneralMarkCard } from '../../gamification/components/GeneralMarkCard';
 import { Database, AlertTriangle } from 'lucide-react';
+import { cn } from '../../../lib/utils/cn';
 
 interface ProtocolArtifactsWalletProps {
   artifactIds: string[];
+  fullWidth?: boolean;
 }
 
-export const ProtocolArtifactsWallet: React.FC<ProtocolArtifactsWalletProps> = ({ artifactIds }) => {
+export const ProtocolArtifactsWallet: React.FC<ProtocolArtifactsWalletProps> = ({ artifactIds, fullWidth }) => {
   const unlockedMarks = GENERAL_MARKS.filter(mark => artifactIds.includes(mark.id));
 
   return (
@@ -28,7 +29,10 @@ export const ProtocolArtifactsWallet: React.FC<ProtocolArtifactsWalletProps> = (
             <p className="text-xs opacity-70 mt-1">System operating within normal parameters.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3">
+        <div className={cn(
+            "grid gap-3", 
+            fullWidth ? "grid-cols-2 md:grid-cols-4 xl:grid-cols-6" : "grid-cols-2"
+        )}>
              {unlockedMarks.map(mark => (
                  <GeneralMarkCard key={mark.id} mark={mark} isUnlocked={true} />
              ))}

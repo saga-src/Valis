@@ -16,6 +16,7 @@ import { GENERAL_MARKS } from '../../gamification/logic/generalMarks';
 import { getMarkVisualStyles } from '../../gamification/components/GeneralMarkCard';
 import { BadgeReality } from '../../gamification/components/BadgeReality';
 import { getRankCardStyle, getMaterial } from '../styles/rankCardStyles';
+import { useFeedStore } from '../../../store/feedStore';
 
 // --- TYPES ---
 interface FeedItem {
@@ -295,15 +296,20 @@ const ProtocolCard = ({ item }: { item: FeedItem }) => {
 // --- MAIN FEED ---
 
 export const SocialFeed = () => {
-  const [items, setItems] = useState<FeedItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  // 1. Use the persisted store for instant loading
+  const { items, setFeed } = useFeedStore();
+  
+  // If we have cached items, we are technically not "loading" visually, 
+  // but we might be "refreshing" in the background.
+  const [isInitialLoad, setIsInitialLoad] = useState(items.length === 0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   
   const [previewGameId, setPreviewGameId] = useState<string | null>(null);
   const [previewInitialData, setPreviewInitialData] = useState<any>(null);
 
-  const fetchFeed = async () => {
-    setIsRefreshing(true);
+  // 2. Modified Fetch Logic
+  const fetchFeed = async (silent = false) => {
+    if (!silent) setIsRefreshing(true);
     try {
       const { data: rawData, error } = await supabase
         .rpc('get_social_feed', { limit_count: 50, offset_count: 0 });
@@ -314,18 +320,19 @@ export const SocialFeed = () => {
             .select('*')
             .order('created_at', { ascending: false })
             .limit(50);
-         if (fallbackData) processData(fallbackData);
+         if (fallbackData) await processData(fallbackData);
       } else {
-         if (rawData) processData(rawData);
+         if (rawData) await processData(rawData);
       }
     } catch (e) {
       console.error('Feed error:', e);
     } finally {
-      setLoading(false);
+      setIsInitialLoad(false);
       setIsRefreshing(false);
     }
   };
 
+  // 3. Process and Save to Store
   const processData = async (rawData: any[]) => {
       const userIds = [...new Set(rawData.map((item: any) => item.user_id))];
       let profiles: any[] = [];
@@ -337,12 +344,23 @@ export const SocialFeed = () => {
         ...item,
         profile: item.username ? { username: item.username, avatar_url: item.avatar_url } : profiles?.find(p => p.id === item.user_id),
       }));
-      setItems(enriched);
+      
+      // Save to cache
+      setFeed(enriched);
   };
 
+  // 4. Initial Mount & Subscription
   useEffect(() => {
-    fetchFeed();
-    const subscription = supabase.channel('public:activities').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activities' }, () => fetchFeed()).subscribe();
+    // Background fetch on mount (silent if we have cache)
+    fetchFeed(items.length > 0);
+
+    const subscription = supabase.channel('public:activities')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activities' }, () => {
+            // Silently fetch updates when a new row is added
+            fetchFeed(true);
+        })
+        .subscribe();
+        
     return () => { subscription.unsubscribe(); };
   }, []);
   
@@ -364,13 +382,14 @@ export const SocialFeed = () => {
         <div className="bg-card/30 border border-border/50 rounded-xl h-full flex flex-col shadow-inner overflow-hidden">
         <div className="p-4 border-b border-border/50 flex justify-between items-center bg-background/50 backdrop-blur-md">
             <h3 className="font-bold text-sm flex items-center gap-2"><Activity size={16} className="text-primary" /> Network Feed</h3>
-            <button onClick={fetchFeed} disabled={isRefreshing} className="p-1.5 hover:bg-muted rounded-md transition-colors text-muted-foreground hover:text-foreground">
+            <button onClick={() => fetchFeed(false)} disabled={isRefreshing} className="p-1.5 hover:bg-muted rounded-md transition-colors text-muted-foreground hover:text-foreground">
                 <RefreshCw size={14} className={cn(isRefreshing && "animate-spin")} />
             </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-            {loading && items.length === 0 ? (
+            {isInitialLoad ? (
+                // Only show loading spinner if we have NO cached items
                 <div className="flex flex-col items-center justify-center h-40 gap-3 text-muted-foreground opacity-50">
                     <RefreshCw className="animate-spin" size={24} />
                     <span className="text-xs font-medium">Calibrating telemetry...</span>

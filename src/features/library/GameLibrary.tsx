@@ -11,7 +11,8 @@ import { useLibrarySettings, SortOption } from './hooks/useLibrarySettings';
 import { GameCard } from './components/GameCard';
 import { GameListRow } from './components/GameListRow';
 import { DataRow } from './components/DataRow';
-import { TagFilterPopover } from './components/TagFilterPopover'; // NEW
+import { TagFilterPopover } from './components/TagFilterPopover'; 
+import { GameContextMenu } from './components/GameContextMenu';
 import { cn } from '../../lib/utils/cn';
 
 // Virtualization
@@ -24,7 +25,7 @@ import { STORE_NAMES, getStatusColorVar } from './utils/libraryUtils';
 import { useMarkObserver } from '../gamification/hooks/useMarkObserver';
 import { useLibraryStore } from '../../store/libraryStore';
 import { useToast } from '../../context/ToastContext';
-import { useTagFilters } from './hooks/useTagFilters'; // NEW
+import { useTagFilters } from './hooks/useTagFilters'; 
 
 // --- VIRTUALIZATION CONTAINERS ---
 
@@ -92,13 +93,13 @@ export const GameLibrary: React.FC = () => {
   const [showViewOptions, setShowViewOptions] = useState(false);
   const [filterStore, setFilterStore] = useState('All');
   const [isLayoutReady, setIsLayoutReady] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, game: any } | null>(null);
   
   const navigate = useNavigate();
   const { theme, changeTheme } = useTheme();
   const { libraryAction } = useSettings();
   const { settings, updateSettings } = useLibrarySettings();
   const { reportSignal } = useMarkObserver();
-  // Fixed: Destructuring clearTagFilters from useLibraryStore
   const { invalidateCache, tagFilters, clearTagFilters } = useLibraryStore();
   const { toast } = useToast();
 
@@ -179,6 +180,16 @@ export const GameLibrary: React.FC = () => {
     return () => clearInterval(interval);
   }, [settings.viewMode, reportSignal]);
 
+  const handleContextMenu = (e: React.MouseEvent, game: any) => {
+      // Prevent menu from going off-screen (basic check)
+      let x = e.clientX;
+      let y = e.clientY;
+      if (x > window.innerWidth - 256) x -= 256; // Shift left if too close to edge (256 matches component width)
+      if (y > window.innerHeight - 300) y -= 200; // Basic height check
+
+      setContextMenu({ x, y, game });
+  };
+
   const statuses = ['All', 'Backlog', 'Playing', 'Beat', 'Completed', 'Dropped', 'Shelved', 'Endless'];
   const sortOptions: { value: SortOption; label: string }[] = [
       { value: 'added', label: 'Date Added' },
@@ -253,6 +264,7 @@ export const GameLibrary: React.FC = () => {
                         settings={settings} 
                         libraryAction={libraryAction}
                         theme={theme}
+                        onContextMenu={handleContextMenu}
                     />
                   )}
                 />
@@ -264,13 +276,17 @@ export const GameLibrary: React.FC = () => {
         return (
             <div className="flex flex-col gap-2 pb-10 overflow-y-auto h-full px-1 animate-in fade-in duration-300">
                 {displayedGames.map((game) => (
+                  <div 
+                    key={game.id} 
+                    onContextMenu={(e) => handleContextMenu(e, game)}
+                  >
                     <GameListRow
-                        key={game.id}
                         game={game}
                         settings={settings}
                         libraryAction={libraryAction}
                         theme={theme}
                     />
+                  </div>
                 ))}
             </div>
         );
@@ -286,7 +302,12 @@ export const GameLibrary: React.FC = () => {
             </div>
             <div className="flex-1 overflow-y-auto flex flex-col">
                 {displayedGames.map((game) => (
-                    <DataRow key={game.id} game={game} />
+                    <div 
+                      key={game.id} 
+                      onContextMenu={(e) => handleContextMenu(e, game)}
+                    >
+                      <DataRow game={game} />
+                    </div>
                 ))}
             </div>
         </div>
@@ -460,6 +481,14 @@ export const GameLibrary: React.FC = () => {
             </div>
         ) : renderContent()}
       </div>
+
+      {contextMenu && (
+          <GameContextMenu 
+              game={contextMenu.game} 
+              position={{ x: contextMenu.x, y: contextMenu.y }} 
+              onClose={() => setContextMenu(null)} 
+          />
+      )}
     </div>
   );
 };

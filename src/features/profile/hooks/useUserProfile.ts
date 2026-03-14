@@ -41,6 +41,10 @@ export interface UserProfile {
   };
   wallet: MilestoneItem[];
   showcase: ShowcaseItem[];
+  preferences: {
+    pinned_badges: string[];
+    pinned_artifacts: string[];
+  };
 }
 
 const DEFAULT_PROFILE: UserProfile = {
@@ -48,7 +52,8 @@ const DEFAULT_PROFILE: UserProfile = {
   leveling: { level: 1, current_xp: 0, next_level_xp: 100, xp_progress_percent: 0 },
   stats: { total_playtime: 0, games_owned: 0, games_beaten: 0, total_platinum: 0 },
   wallet: [],
-  showcase: []
+  showcase: [],
+  preferences: { pinned_badges: [], pinned_artifacts: [] }
 };
 
 // --- XP Formula Helpers ---
@@ -136,7 +141,11 @@ export const useUserProfile = () => {
           total_platinum: totalPlatinum
         },
         wallet: [], // Milestone wallet logic is complex for local, keeping empty for MVP
-        showcase
+        showcase,
+        preferences: {
+          pinned_badges: settings?.pinned_badges || [],
+          pinned_artifacts: settings?.pinned_artifacts || []
+        }
       });
 
     } catch (err: any) {
@@ -210,7 +219,11 @@ export const useUserProfile = () => {
           total_platinum: stats.games_completed || 0
         },
         wallet: walletData || [],
-        showcase: showcaseData
+        showcase: showcaseData,
+        preferences: {
+          pinned_badges: stats.pinned_badges || [],
+          pinned_artifacts: stats.pinned_artifacts || []
+        }
       });
 
     } catch (err: any) {

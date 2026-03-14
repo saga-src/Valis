@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Medal } from 'lucide-react';
 import { BadgeCard } from '../BadgeCard';
@@ -36,9 +35,9 @@ export const MilestoneWallet: React.FC<MilestoneWalletProps> = ({ badges, title 
             )}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 flex-1">
+        <div className="grid grid-cols-2 gap-3 flex-1">
             {badges.map((badge) => (
-                <BadgeCard key={badge.id} badge={badge} className="w-full h-auto" />
+                <BadgeCard key={badge.id} badge={badge} className="w-full h-auto min-h-[60px]" />
             ))}
              {badges.length === 0 && (
                 <div className="col-span-full py-12 text-center text-sm text-muted-foreground border-2 border-dashed border-border/50 rounded-lg bg-muted/5">

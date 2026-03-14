@@ -110,6 +110,7 @@ export interface StorageApi {
   onSteamSyncProgress: (callback: (data: { message: string }) => void) => () => void;
   // Fix: Add openSteamApiKeyPage to StorageApi interface in types/electron.d.ts
   openSteamApiKeyPage: () => Promise<{ success: boolean }>;
+  openExplorer: (filePath: string) => Promise<{ success: boolean; error?: string }>;
 
   // Launcher
   launchGame: (gameId: string) => Promise<{ success: boolean; error?: string }>;

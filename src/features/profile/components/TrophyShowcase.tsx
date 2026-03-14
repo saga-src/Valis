@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Trophy, Star } from 'lucide-react';
 import { getCoverUrl } from '../../../lib/api/igdb';
@@ -60,10 +59,10 @@ export const TrophyShowcase: React.FC<TrophyShowcaseProps> = ({ games, onGameCli
                 </div>
 
                 {/* Footer Rating (Optional) */}
-                {game.rating !== undefined && (
+                {(game.rating !== undefined && game.rating !== null) && (
                     <div className="absolute bottom-0 left-0 right-0 p-2 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-t from-black/90 to-transparent">
                         <div className="flex items-center gap-1 text-[10px] font-bold text-yellow-400">
-                            <Star size={10} fill="currentColor" /> {game.rating.toFixed(1)}
+                            <Star size={10} fill="currentColor" /> {Number(game.rating).toFixed(1)}
                         </div>
                     </div>
                 )}
