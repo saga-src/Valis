@@ -153,5 +153,14 @@ export const useProfileData = (targetUserId?: string) => {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    const refreshProfileData = () => {
+      void fetchData();
+    };
+
+    window.addEventListener('valis-profile-data-refresh', refreshProfileData);
+    return () => window.removeEventListener('valis-profile-data-refresh', refreshProfileData);
+  }, [fetchData]);
+
   return { data, isLoading, error, refetch: fetchData };
 };

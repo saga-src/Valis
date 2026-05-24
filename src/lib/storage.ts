@@ -1,3 +1,8 @@
+import { useCacheStore } from '../store/cacheStore';
+import { cacheKeys } from './cache/cacheKeys';
+import { cachePolicies } from './cache/cachePolicy';
+import { invalidateSettingsCaches } from './cache/invalidation';
+
 export interface StorageApi {
   saveGame: (game: any) => Promise<any>;
   addGame: (game: any) => Promise<any>;
@@ -8,6 +13,7 @@ export interface StorageApi {
   deleteGame: (gameId: string) => Promise<boolean>;
   getSessions: (gameId: string) => Promise<any[]>;
   getAllSessions: () => Promise<any[]>;
+  getSessionsPage: (options?: { limit?: number; offset?: number; date?: string }) => Promise<{ sessions: any[]; total: number; limit: number; offset: number; hasMore: boolean }>;
   getRecentSessions: (days: number) => Promise<any[]>;
   saveSession: (session: any) => Promise<any>;
   exportData: () => Promise<boolean>;
@@ -89,6 +95,11 @@ export const getSessions = async (gameId: string) => {
 export const getAllSessions = async () => {
   if (!window.api) return [];
   return await window.api.getAllSessions();
+};
+
+export const getSessionsPage = async (options?: { limit?: number; offset?: number; date?: string }) => {
+  if (!window.api) return { sessions: [], total: 0, limit: options?.limit || 0, offset: options?.offset || 0, hasMore: false };
+  return await window.api.getSessionsPage(options);
 };
 
 export const getRecentSessions = async (days: number) => {
@@ -203,12 +214,27 @@ export const getAllTags = async () => {
 
 export const getSetting = async (key: string) => {
   if (!window.api) return null;
-  return await window.api.getSetting(key);
+  const cache = useCacheStore.getState();
+  const cacheKey = cacheKeys.setting(key);
+  if (cache.isFresh(cacheKey)) {
+    return cache.getEntry(cacheKey)?.data;
+  }
+  cache.setLoading(cacheKey, cachePolicies.settings);
+  try {
+    const value = await window.api.getSetting(key);
+    cache.setEntry(cacheKey, value, cachePolicies.settings);
+    return value;
+  } catch (error) {
+    cache.setError(cacheKey, error, cachePolicies.settings);
+    throw error;
+  }
 };
 
 export const saveSetting = async (key: string, value: any) => {
   if (!window.api) return { success: false };
-  return await window.api.saveSetting({ key, value });
+  const result = await window.api.saveSetting({ key, value });
+  invalidateSettingsCaches();
+  return result;
 };
 
 // PSN

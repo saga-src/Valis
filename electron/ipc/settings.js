@@ -13,6 +13,7 @@ import { syncSteamLibrary } from '../services/integrations/SteamSyncService.js';
 import { syncEpicLibrary } from '../services/integrations/EpicSyncService.js';
 import { syncPsnLibrary } from '../services/integrations/PsnSyncService.js';
 import { syncXboxLibrary, linkXboxAccount } from '../services/integrations/XboxSyncService.js';
+import { emitDataChange } from '../services/DataChangeBus.js';
 
 // Helper to expand Windows environment variables like %APPDATA%
 function expandPath(pathStr) {
@@ -84,6 +85,7 @@ export function registerSettingsHandlers() {
         try {
             await dbQueries.setSetting(key, value);
             console.log("✅ Setting saved");
+            emitDataChange({ type: 'settings', source: 'settings:save', ids: [key], important: true });
             return { success: true };
         } catch (e) {
             console.error("❌ Error saving setting:", e);
@@ -98,6 +100,7 @@ export function registerSettingsHandlers() {
 
     ipcMain.handle('settings:unlink-account', async (_, id) => {
         await removeLinkedAccount(id);
+        emitDataChange({ type: 'account', source: 'settings:unlink-account', ids: [id], important: true });
         return { success: true };
     });
 
@@ -124,7 +127,9 @@ export function registerSettingsHandlers() {
 
     // Steam Authentication
     ipcMain.handle('auth:steam', async () => {
-        return await authService.loginToSteam();
+        const result = await authService.loginToSteam();
+        if (result?.success) emitDataChange({ type: 'account', source: 'auth:steam', important: true });
+        return result;
     });
 
     ipcMain.handle('auth:get-steam-user', async () => {
@@ -134,12 +139,16 @@ export function registerSettingsHandlers() {
 
     // Epic Authentication
     ipcMain.handle('auth:epic', async () => {
-        return await epicAuth.loginToEpic();
+        const result = await epicAuth.loginToEpic();
+        if (result?.success) emitDataChange({ type: 'account', source: 'auth:epic', important: true });
+        return result;
     });
 
     // Xbox Authentication (Link Only)
     ipcMain.handle('auth:xbox', async (event) => {
-        return await linkXboxAccount(event.sender);
+        const result = await linkXboxAccount(event.sender);
+        if (result?.success) emitDataChange({ type: 'account', source: 'auth:xbox', important: true });
+        return result;
     });
 
     // PSN Authentication
@@ -182,6 +191,7 @@ export function registerSettingsHandlers() {
                 auth_data: JSON.stringify({ ...tokens, obtainedAt: Date.now() / 1000 }),
                 created_at: Date.now()
             });
+            emitDataChange({ type: 'account', source: 'auth:psn', important: true });
             return { success: true };
         } catch (e) {
             console.error('[IPC Main] auth:psn CRASHED:', e);
@@ -196,6 +206,8 @@ export function registerSettingsHandlers() {
     ipcMain.handle('settings:sync-steam', async (event) => {
         try {
             const result = await syncSteamLibrary(event.sender);
+            emitDataChange({ type: 'library', source: 'settings:sync-steam', important: true });
+            emitDataChange({ type: 'achievement', source: 'settings:sync-steam', important: Boolean(result?.synced) });
             return { success: true, ...result };
         } catch (e) {
             console.error('Steam Sync Error:', e);
@@ -207,6 +219,8 @@ export function registerSettingsHandlers() {
     ipcMain.handle('settings:sync-epic', async (event) => {
         try {
             const result = await syncEpicLibrary(event.sender);
+            emitDataChange({ type: 'library', source: 'settings:sync-epic', important: true });
+            emitDataChange({ type: 'achievement', source: 'settings:sync-epic', important: Boolean(result?.synced) });
             return { success: true, ...result };
         } catch (e) {
             console.error('Epic Sync Error:', e);
@@ -218,6 +232,8 @@ export function registerSettingsHandlers() {
     ipcMain.handle('settings:sync-psn', async (event) => {
         try {
             const result = await syncPsnLibrary(event.sender);
+            emitDataChange({ type: 'library', source: 'settings:sync-psn', important: true });
+            emitDataChange({ type: 'achievement', source: 'settings:sync-psn', important: Boolean(result?.synced) });
             return { success: true, ...result };
         } catch (e) {
             console.error('PSN Sync Error:', e);
@@ -229,6 +245,8 @@ export function registerSettingsHandlers() {
     ipcMain.handle('settings:sync-xbox', async (event) => {
         try {
             const result = await syncXboxLibrary(event.sender);
+            emitDataChange({ type: 'library', source: 'settings:sync-xbox', important: true });
+            emitDataChange({ type: 'achievement', source: 'settings:sync-xbox', important: Boolean(result?.synced) });
             return { success: true, ...result };
         } catch (e) {
             console.error('Xbox Sync Error:', e);

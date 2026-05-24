@@ -6,6 +6,7 @@ import fs from 'fs';
 import si from 'systeminformation';
 import { db, rawDb } from '../db/client.js';
 import { getProfileSyncStats } from '../db/queries.js';
+import { emitDataChange, withDataChangeSuppressed } from '../services/DataChangeBus.js';
 
 // Define all tables that contain user data.
 // ORDER MATTERS: Children (tables with foreign keys) must come before Parents.
@@ -55,7 +56,9 @@ export function registerSystemHandlers() {
   // Factory Reset
   ipcMain.handle('system:factory-reset', async (event, options) => {
     try {
-      return await FactoryResetService.performReset(options);
+      const result = await withDataChangeSuppressed(() => FactoryResetService.performReset(options));
+      if (result?.success) emitDataChange({ type: 'reset', source: 'system:factory-reset', important: false });
+      return result;
     } catch (error) {
       console.error('Factory reset error:', error);
       return { success: false, error: error.message };
@@ -170,7 +173,8 @@ export function registerSystemHandlers() {
 
   // 2. Restore Backup (Sync Download / Manual Restore)
   ipcMain.handle('system:restore-backup', async (event, jsonData) => {
-    try {
+    const result = await withDataChangeSuppressed(async () => {
+      try {
       await db.transaction().execute(async (trx) => {
         // A. Wipe all tables first (in dependency order)
         for (const table of ALL_USER_TABLES) {
@@ -197,12 +201,16 @@ export function registerSystemHandlers() {
     } catch (error) {
       console.error('Restore failed:', error);
       return { success: false, error: error.message };
-    }
+      }
+    });
+    if (result.success) emitDataChange({ type: 'restore', source: 'system:restore-backup', important: false });
+    return result;
   });
 
   // 3. Wipe User Data (Logout / Account Switch)
   ipcMain.handle('system:wipe-user-data', async () => {
-    try {
+    const result = await withDataChangeSuppressed(async () => {
+      try {
         await db.transaction().execute(async (trx) => {
             // Delete from every table in the dependency list
             for (const table of ALL_USER_TABLES) {
@@ -219,7 +227,10 @@ export function registerSystemHandlers() {
     } catch (error) {
         console.error('Wipe failed:', error);
         return { success: false, error: error.message };
-    }
+      }
+    });
+    if (result.success) emitDataChange({ type: 'reset', source: 'system:wipe-user-data', important: false });
+    return result;
   });
 
   // Startup Handlers

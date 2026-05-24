@@ -182,6 +182,51 @@ export async function getAllSessions() {
   return await db.selectFrom('sessions').selectAll().execute();
 }
 
+export async function getSessionsPage(options = {}) {
+  const rawLimit = Number(options.limit);
+  const rawOffset = Number(options.offset);
+  const limit = Math.max(1, Math.min(Number.isFinite(rawLimit) ? rawLimit : 50, 200));
+  const offset = Math.max(0, Number.isFinite(rawOffset) ? rawOffset : 0);
+  const date = typeof options.date === 'string' ? options.date : '';
+
+  let sessionsQuery = db.selectFrom('sessions').selectAll();
+  let countQuery = db.selectFrom('sessions').select(({ fn }) => [
+    fn.countAll().as('total')
+  ]);
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const start = new Date(`${date}T00:00:00`).getTime();
+    const end = start + (24 * 60 * 60 * 1000);
+
+    sessionsQuery = sessionsQuery
+      .where('start_time', '>=', start)
+      .where('start_time', '<', end);
+
+    countQuery = countQuery
+      .where('start_time', '>=', start)
+      .where('start_time', '<', end);
+  }
+
+  const [sessions, countRow] = await Promise.all([
+    sessionsQuery
+      .orderBy('start_time', 'desc')
+      .limit(limit)
+      .offset(offset)
+      .execute(),
+    countQuery.executeTakeFirst()
+  ]);
+
+  const total = Number(countRow?.total || 0);
+
+  return {
+    sessions,
+    total,
+    limit,
+    offset,
+    hasMore: offset + sessions.length < total
+  };
+}
+
 export async function getRecentSessions(days = 30) {
   const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
   return await db.selectFrom('sessions')

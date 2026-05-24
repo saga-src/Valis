@@ -4,6 +4,41 @@ export interface Tag {
   color: string;
 }
 
+export type DataChangeType =
+  | 'library'
+  | 'game'
+  | 'session'
+  | 'achievement'
+  | 'gamification'
+  | 'tag'
+  | 'settings'
+  | 'account'
+  | 'restore'
+  | 'reset';
+
+export interface DataChangeEvent {
+  type: DataChangeType;
+  source: string;
+  gameId?: string;
+  sessionId?: string;
+  ids?: string[];
+  important: boolean;
+  at: number;
+}
+
+export interface GameAchievementRefreshResult {
+  success: boolean;
+  gameId: string;
+  platform?: string;
+  total?: number;
+  unlockedBefore?: number;
+  unlockedAfter?: number;
+  newlyUnlocked?: number;
+  definitionsUpdated?: number;
+  unsupported?: boolean;
+  error?: string;
+}
+
 export interface StorageApi {
   saveGame: (game: any) => Promise<any>;
   addGame: (game: any) => Promise<any>;
@@ -17,6 +52,7 @@ export interface StorageApi {
   getSessions: (gameId: string) => Promise<any[]>;
   getGameSessions: (gameId: string) => Promise<any[]>;
   getAllSessions: () => Promise<any[]>;
+  getSessionsPage: (options?: { limit?: number; offset?: number; date?: string }) => Promise<{ sessions: any[]; total: number; limit: number; offset: number; hasMore: boolean }>;
   getRecentSessions: (days: number) => Promise<any[]>;
   saveSession: (session: any) => Promise<any>;
   exportData: () => Promise<boolean>;
@@ -61,6 +97,9 @@ export interface StorageApi {
   scanAchievements: () => Promise<{ success: boolean; count?: number; message?: string }>;
   refreshAchievementsMetadata: () => Promise<{ success: boolean; processed?: number; updated?: number; error?: string }>;
   onAchievementsRefreshProgress: (callback: (data: { current: number; total: number; gameName: string }) => void) => () => void;
+  refreshGameAchievements: (gameId: string, options?: { mode?: 'lockedOnly' | 'full'; platform?: 'auto' | 'steam' | 'psn' | 'xbox' | 'epic' }) => Promise<GameAchievementRefreshResult>;
+  onGameAchievementsRefreshProgress: (callback: (data: { gameId: string; stage: string; message: string }) => void) => () => void;
+  onDataChanged: (callback: (event: DataChangeEvent) => void) => () => void;
 
   // Gamification
   getGamificationStatus: () => Promise<{ metrics: Record<string, number>; totalXP: number; unlockedTiers: string[]; unlockedMarks: string[]; tree: any[] }>;
@@ -108,6 +147,7 @@ export interface StorageApi {
   syncPsnLibrary: () => Promise<{ success: boolean; added?: number; synced?: number; error?: string }>;
   syncXboxLibrary: () => Promise<{ success: boolean; added?: number; synced?: number; error?: string }>;
   onSteamSyncProgress: (callback: (data: { message: string }) => void) => () => void;
+  onSocialBroadcastSync: (callback: (data: { platform: string; added?: number; achievements?: number }) => void) => () => void;
   // Fix: Add openSteamApiKeyPage to StorageApi interface in types/electron.d.ts
   openSteamApiKeyPage: () => Promise<{ success: boolean }>;
   openExplorer: (filePath: string) => Promise<{ success: boolean; error?: string }>;

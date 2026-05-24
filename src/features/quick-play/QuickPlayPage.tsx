@@ -1,38 +1,39 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-// Fix: Import Link and useLocation from local shim index file to avoid casing conflict with App.tsx
-import { Link, useLocation } from '../../app/index';
-import { getLibrary, getAllSessions } from '../../lib/storage';
+// Fix: Import useLocation from local shim index file to avoid casing conflict with App.tsx
+import { useLocation } from '../../app/index';
 import { getCoverUrl } from '../../lib/api/igdb';
 import { SessionControlPanel } from '../session-tracker/SessionControlPanel';
 import { Search, Play, History, Clock, Radio, CalendarClock, Layout, Plus, CheckCircle2 } from 'lucide-react';
 import { useSessionStore } from '../session-tracker/store';
 import { cn } from '../../lib/utils/cn';
 import { formatDistanceToNow } from 'date-fns';
+import { useCachedResource } from '../../lib/cache/useCachedResource';
+import { cacheKeys } from '../../lib/cache/cacheKeys';
+import { cachePolicies } from '../../lib/cache/cachePolicy';
 
 export const QuickPlayPage: React.FC = () => {
   const location = useLocation();
   const { activeSession } = useSessionStore();
-  const [library, setLibrary] = useState<any[]>([]);
-  const [allSessions, setAllSessions] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [selectedGame, setSelectedGame] = useState<any | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [libs, sessions] = await Promise.all([
-          getLibrary(),
-          getAllSessions()
-        ]);
-        setLibrary(libs);
-        setAllSessions(sessions);
-      } catch (e) {
-        console.error("Failed to load data", e);
-      }
-    };
-    load();
-  }, []);
+  const libraryResource = useCachedResource<any[]>({
+    key: cacheKeys.library,
+    fetcher: async () => window.api?.getLibrary?.() || [],
+    policy: cachePolicies.library,
+    initialData: [],
+  });
+
+  const sessionsResource = useCachedResource<any[]>({
+    key: cacheKeys.sessionsAll,
+    fetcher: async () => window.api?.getAllSessions?.() || [],
+    policy: cachePolicies.sessions,
+    initialData: [],
+  });
+
+  const library = libraryResource.data || [];
+  const allSessions = sessionsResource.data || [];
 
   /**
    * Handle Selection Priority:

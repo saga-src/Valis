@@ -2,6 +2,7 @@
 import { db } from '../client.js';
 import { sql } from 'kysely';
 import { fetchSteamAchievements } from '../../services/integrations/SteamScraper.js';
+import { emitDataChange } from '../../services/DataChangeBus.js';
 
 export async function refreshSteamAchievements(gameId, steamId) {
   console.log(`[DB] Found Steam ID ${steamId} for Game ${gameId}. Fetching achievements...`);
@@ -48,23 +49,45 @@ export async function refreshSteamAchievements(gameId, steamId) {
  * Saves/Updates achievement definitions and progress from ANY source.
  * @param {string} gameId Internal Game UUID
  * @param {Array} achievements List of { id, name, description, icon, is_hidden, unlocked, unlocked_at }
+ * @param {{ mode?: 'full' | 'lockedOnly' | 'definitionsOnly' }} options
  */
-export async function saveAchievementsToDb(gameId, achievements) {
+export async function saveAchievementsToDb(gameId, achievements, options = {}) {
     const gId = String(gameId);
-    let unlockedCount = 0;
+    const mode = options.mode || 'full';
+    let remoteUnlockedCount = 0;
+    let newlyUnlocked = 0;
+    let definitionsUpdated = 0;
+    let repairedUnlockFlags = 0;
+    let lockedOrphanUnlocks = 0;
 
     await db.transaction().execute(async (trx) => {
         for (const ach of achievements) {
-            // 1. Upsert Definitions
+            const achievementId = String(ach.id);
+            const existingProgress = await trx.selectFrom('achievement_progress')
+                .select(['unlocked_at'])
+                .where('game_id', '=', gId)
+                .where('achievement_id', '=', achievementId)
+                .executeTakeFirst();
+
+            const hasProgressUnlock = Boolean(existingProgress?.unlocked_at);
+            const remoteUnlocked = Boolean(ach.unlocked);
+            const remoteUnlockedWithProgress = remoteUnlocked && Boolean(ach.unlocked_at);
+            const shouldUnlockDefinition = mode === 'definitionsOnly'
+                ? hasProgressUnlock
+                : hasProgressUnlock || remoteUnlockedWithProgress;
+
+            if (remoteUnlocked) remoteUnlockedCount++;
+            if (remoteUnlockedWithProgress && !hasProgressUnlock) newlyUnlocked++;
+
             await trx.insertInto('achievements')
                 .values({
-                    id: String(ach.id),
+                    id: achievementId,
                     game_id: gId,
-                    name: ach.name,
+                    name: ach.name || achievementId,
                     description: ach.description || '',
                     icon_url: ach.icon || '',
                     is_hidden: ach.is_hidden ? 1 : 0,
-                    unlocked: ach.unlocked ? 1 : 0
+                    unlocked: shouldUnlockDefinition ? 1 : 0
                 })
                 .onConflict((oc) => oc
                     .columns(['game_id', 'id'])
@@ -72,39 +95,58 @@ export async function saveAchievementsToDb(gameId, achievements) {
                         name: (eb) => eb.ref('excluded.name'),
                         description: (eb) => eb.ref('excluded.description'),
                         icon_url: (eb) => eb.ref('excluded.icon_url'),
+                        is_hidden: (eb) => eb.ref('excluded.is_hidden'),
                         unlocked: (eb) => eb.ref('excluded.unlocked')
                     })
                 )
                 .execute();
+            definitionsUpdated++;
 
-            // 2. Upsert Progress if unlocked
-            if (ach.unlocked) {
-                unlockedCount++;
-                await trx.insertInto('achievement_progress')
-                    .values({
-                        game_id: gId,
-                        achievement_id: String(ach.id),
-                        unlocked_at: ach.unlocked_at || new Date().toISOString(),
-                        session_id: null
-                    })
-                    .onConflict(oc => oc
-                        .columns(['game_id', 'achievement_id'])
-                        .doUpdateSet({
-                            unlocked_at: (eb) => eb.ref('excluded.unlocked_at')
+            if (mode !== 'definitionsOnly' && remoteUnlockedWithProgress) {
+                if (!existingProgress) {
+                    await trx.insertInto('achievement_progress')
+                        .values({
+                            game_id: gId,
+                            achievement_id: achievementId,
+                            unlocked_at: ach.unlocked_at,
+                            session_id: null
                         })
-                    )
-                    .execute();
+                        .execute();
+                } else if (!existingProgress.unlocked_at) {
+                    await trx.updateTable('achievement_progress')
+                        .set({ unlocked_at: ach.unlocked_at })
+                        .where('game_id', '=', gId)
+                        .where('achievement_id', '=', achievementId)
+                        .execute();
+                }
             }
         }
     });
 
-    // 3. Automation: Check for 100% completion
-    await checkGameCompletion(gId);
+    if (mode !== 'definitionsOnly') {
+        const repairStats = await repairAchievementUnlockFlags(gId);
+        repairedUnlockFlags += repairStats.unlockedFromProgress;
+        lockedOrphanUnlocks += repairStats.lockedWithoutProgress;
+    }
 
-    return { total: achievements.length, unlocked: unlockedCount };
+    // 3. Automation: Check for 100% completion
+    const promotedToCompleted = await checkGameCompletion(gId);
+
+    return {
+        total: achievements.length,
+        unlocked: remoteUnlockedCount,
+        newlyUnlocked,
+        definitionsUpdated,
+        repairedUnlockFlags,
+        lockedOrphanUnlocks,
+        promotedToCompleted,
+        mode
+    };
 }
 
 export async function getAchievements(gameId) {
+  await repairAchievementUnlockFlags(gameId);
+
   const rows = await db.selectFrom('achievements')
     .leftJoin('achievement_progress', (join) => 
       join
@@ -172,6 +214,13 @@ export async function checkGameCompletion(gameId) {
                     .set({ status: 'Completed', updated_at: Date.now() })
                     .where('game_id', '=', String(gameId))
                     .execute();
+
+                emitDataChange({
+                    type: 'game',
+                    source: 'achievement-completion',
+                    gameId,
+                    important: true
+                });
                 
                 return true;
             }
@@ -183,6 +232,11 @@ export async function checkGameCompletion(gameId) {
 }
 
 export async function saveAchievementProgress(gameId, achievementId, { unlocked_at, session_id }) {
+  if (!unlocked_at) {
+    await repairAchievementUnlockFlags(gameId);
+    return false;
+  }
+
   await db.insertInto('achievement_progress')
     .values({
       game_id: String(gameId),
@@ -195,6 +249,71 @@ export async function saveAchievementProgress(gameId, achievementId, { unlocked_
       .doUpdateSet({ unlocked_at, session_id })
     )
     .execute();
+
+  await db.updateTable('achievements')
+    .set({ unlocked: 1 })
+    .where('game_id', '=', String(gameId))
+    .where('id', '=', String(achievementId))
+    .execute();
+
+  return true;
+}
+
+export async function repairAchievementUnlockFlags(gameId) {
+    const gId = String(gameId);
+    const shouldBeUnlocked = await db.selectFrom('achievements')
+        .innerJoin('achievement_progress', (join) =>
+            join
+                .onRef('achievements.id', '=', 'achievement_progress.achievement_id')
+                .on('achievement_progress.game_id', '=', gId)
+        )
+        .select('achievements.id')
+        .where('achievements.game_id', '=', gId)
+        .where('achievements.unlocked', '!=', 1)
+        .where('achievement_progress.unlocked_at', 'is not', null)
+        .execute();
+
+    const shouldBeLocked = await db.selectFrom('achievements')
+        .leftJoin('achievement_progress', (join) =>
+            join
+                .onRef('achievements.id', '=', 'achievement_progress.achievement_id')
+                .on('achievement_progress.game_id', '=', gId)
+        )
+        .select('achievements.id')
+        .where('achievements.game_id', '=', gId)
+        .where('achievements.unlocked', '=', 1)
+        .where((eb) => eb.or([
+            eb('achievement_progress.achievement_id', 'is', null),
+            eb('achievement_progress.unlocked_at', 'is', null)
+        ]))
+        .execute();
+
+    if (shouldBeUnlocked.length === 0 && shouldBeLocked.length === 0) {
+        return { unlockedFromProgress: 0, lockedWithoutProgress: 0 };
+    }
+
+    await db.transaction().execute(async (trx) => {
+        for (const row of shouldBeUnlocked) {
+            await trx.updateTable('achievements')
+                .set({ unlocked: 1 })
+                .where('game_id', '=', gId)
+                .where('id', '=', String(row.id))
+                .execute();
+        }
+
+        for (const row of shouldBeLocked) {
+            await trx.updateTable('achievements')
+                .set({ unlocked: 0 })
+                .where('game_id', '=', gId)
+                .where('id', '=', String(row.id))
+                .execute();
+        }
+    });
+
+    return {
+        unlockedFromProgress: shouldBeUnlocked.length,
+        lockedWithoutProgress: shouldBeLocked.length
+    };
 }
 
 /**
@@ -211,20 +330,18 @@ export async function updateAchievementStatusByName(gameId, achievementName, unl
             .executeTakeFirst();
 
         if (ach) {
-            // 2. Update definition status
-            await db.updateTable('achievements')
-                .set({ unlocked: 1 })
-                .where('game_id', '=', String(gameId))
-                .where('id', '=', ach.id)
-                .execute();
+            // 2. Save detailed progress only when the source provides a real timestamp.
+            if (!unlockedAt) {
+                await repairAchievementUnlockFlags(gameId);
+                return false;
+            }
 
-            // 3. Save progress record with timestamp
-            await saveAchievementProgress(gameId, ach.id, { 
-                unlocked_at: unlockedAt, 
-                session_id: null 
+            await saveAchievementProgress(gameId, ach.id, {
+                unlocked_at: unlockedAt,
+                session_id: null
             });
             
-            // 4. Auto-Complete Check
+            // 3. Auto-Complete Check
             await checkGameCompletion(gameId);
             
             return true;
@@ -293,14 +410,14 @@ export async function savePsnAchievements(gameId, definitions, earnedStatus) {
                         continue;
                     }
 
-                    if (earned.earned) {
+                    if (earned.earned && earned.earnedDateTime) {
                         await trx.updateTable('achievements')
                             .set({ unlocked: 1 })
                             .where('game_id', '=', String(gameId))
                             .where('id', '=', strId)
                             .execute();
 
-                        // Upsert Progress
+                        // Upsert Progress only when PSN gives us a real earned timestamp.
                         await trx.insertInto('achievement_progress')
                             .values({
                                 game_id: String(gameId),
@@ -318,6 +435,8 @@ export async function savePsnAchievements(gameId, definitions, earnedStatus) {
             }
         });
         
+        await repairAchievementUnlockFlags(gameId);
+
         // Check for 100% completion after bulk update
         await checkGameCompletion(gameId);
         

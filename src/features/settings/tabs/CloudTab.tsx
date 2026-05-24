@@ -8,6 +8,7 @@ import { LogoutModal } from '../../../components/ui/LogoutModal';
 import { AuthWidget } from '../../auth/components/AuthWidget';
 import { supabase } from '../../../lib/cloud/supabase';
 import { PROGRESSION_TREE } from '../../gamification/logic/milestones';
+import { setCloudBackupSuppressed } from '../../../lib/cloud/cloudBackupState';
 
 export const CloudTab = () => {
   const { user, profile, signOut, loading } = useAuth();
@@ -22,11 +23,16 @@ export const CloudTab = () => {
     setIsSyncing(true);
     try {
       // 1. FORCE CLOUD SYNC
-      await performCloudUpload();
+      await performCloudUpload({ reason: 'logout-final-upload', markDirty: true, force: true });
       
       // 2. WIPE LOCAL DATA
       if (window.api) {
-        await window.api.wipeUserData();
+        setCloudBackupSuppressed(true);
+        try {
+          await window.api.wipeUserData();
+        } finally {
+          setCloudBackupSuppressed(false);
+        }
       }
 
       // 3. SIGN OUT
@@ -44,7 +50,14 @@ export const CloudTab = () => {
       // Optional: Ask user if they want to force logout anyway?
       const force = window.confirm("Cloud sync failed. Force logout anyway? (Unsaved progress may be lost)");
       if (force) {
-         if (window.api) await window.api.wipeUserData();
+         if (window.api) {
+           setCloudBackupSuppressed(true);
+           try {
+             await window.api.wipeUserData();
+           } finally {
+             setCloudBackupSuppressed(false);
+           }
+         }
          await signOut();
          window.location.reload();
       }
@@ -152,7 +165,7 @@ export const CloudTab = () => {
   const handleDatabaseSync = async () => {
     try {
       setIsSyncing(true);
-      await performCloudUpload();
+      await performCloudUpload({ reason: 'manual-json-backup', markDirty: true, force: true });
       toast.success("JSON backup synchronized to cloud.");
     } catch (e) {
       console.error(e);

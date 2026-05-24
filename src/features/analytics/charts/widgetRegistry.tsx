@@ -8,6 +8,9 @@ import { CircadianWidget } from '../charts/CircadianWidget';
 import { BurnDownWidget } from '../charts/BurnDownWidget';
 import { GenreStreamWidget } from '../charts/GenreStreamWidget';
 import { TemporalProjectionWidget } from '../charts/TemporalProjectionWidget';
+import { PlatformBreakdownWidget } from './PlatformBreakdownWidget';
+import { CompletionFunnelWidget } from './CompletionFunnelWidget';
+import { SessionStreakWidget } from './SessionStreakWidget';
 // import { HardwareWidget } from '../../../components/widgets/HardwareWidget'; -- Disabled due to performance lag (v1.0)
 import { SocialFeed } from '../../social/components/SocialFeed';
 import { useCoreAnalytics } from '../hooks/useCoreAnalytics';
@@ -68,6 +71,21 @@ const ConnectedProjection = () => {
   return <TemporalProjectionWidget library={library} sessions={sessions} />;
 };
 
+const ConnectedPlatformBreakdown = () => {
+  const { library, sessions } = useCoreAnalytics();
+  return <PlatformBreakdownWidget library={library} sessions={sessions} />;
+};
+
+const ConnectedCompletionFunnel = () => {
+  const { library } = useCoreAnalytics();
+  return <CompletionFunnelWidget library={library} />;
+};
+
+const ConnectedSessionStreak = () => {
+  const { sessions } = useCoreAnalytics();
+  return <SessionStreakWidget sessions={sessions} />;
+};
+
 // HardwareWidget handles its own data fetching via useSystemMonitor
 // SocialFeed handles its own data fetching via Supabase
 
@@ -109,6 +127,18 @@ export const WIDGET_DEFINITIONS: Record<string, WidgetDef> = {
   'temporal_projection': {
       id: 'temporal_projection', title: 'Backlog Forecast', component: ConnectedProjection,
       defaultSize: { w: 4, h: 2 }, minSize: { w: 2, h: 2 }, isStatCard: false
+  },
+  'platform_breakdown': {
+      id: 'platform_breakdown', title: 'Platform Breakdown', component: ConnectedPlatformBreakdown,
+      defaultSize: { w: 4, h: 3 }, minSize: { w: 3, h: 3 }
+  },
+  'completion_funnel': {
+      id: 'completion_funnel', title: 'Completion Funnel', component: ConnectedCompletionFunnel,
+      defaultSize: { w: 4, h: 3 }, minSize: { w: 3, h: 3 }
+  },
+  'session_streak': {
+      id: 'session_streak', title: 'Session Streak', component: ConnectedSessionStreak,
+      defaultSize: { w: 4, h: 3 }, minSize: { w: 3, h: 3 }
   },
 
   // --- CHARTS ---
@@ -169,14 +199,17 @@ export const DEFAULT_LAYOUT = [
   // Row 2: Charts
   { i: 'backlog_burndown',   x: 0, y: 2, w: 8, h: 4 },
   { i: 'temporal_projection',x: 8, y: 2, w: 4, h: 2 },
+  { i: 'session_streak',     x: 8, y: 4, w: 4, h: 3 },
   // { i: 'system_monitor',     x: 8, y: 4, w: 4, h: 2 }, -- Hidden by default to prevent lag
 
   // Row 3: Secondary Charts
-  { i: 'genre_radar',        x: 0, y: 6, w: 4, h: 4 },
-  { i: 'genre_evolution',    x: 4, y: 6, w: 8, h: 4 },
+  { i: 'genre_radar',        x: 0, y: 7, w: 4, h: 4 },
+  { i: 'genre_evolution',    x: 4, y: 7, w: 8, h: 4 },
 
   // Row 4: Deep Dive & Social
-  { i: 'activity_heatmap',   x: 0, y: 10, w: 8, h: 4 },
-  { i: 'social_feed',        x: 8, y: 10, w: 4, h: 6 }, // Updated to SocialFeed
-  { i: 'circadian_rhythm',   x: 8, y: 16, w: 4, h: 4 },
+  { i: 'activity_heatmap',   x: 0, y: 11, w: 8, h: 4 },
+  { i: 'platform_breakdown', x: 8, y: 11, w: 4, h: 3 },
+  { i: 'completion_funnel',  x: 8, y: 14, w: 4, h: 3 },
+  { i: 'circadian_rhythm',   x: 0, y: 15, w: 4, h: 4 },
+  { i: 'social_feed',        x: 4, y: 15, w: 8, h: 6 }, // Updated to SocialFeed
 ];

@@ -53,6 +53,7 @@ logs
 *.sln
 *.sw?
 .vscode/
+.workflow
 
 # --- Supabase / Cloud Functions ---
 supabase/.temp/

@@ -1,38 +1,42 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Achievement } from '../../../types/achievements';
+import { useCachedResource } from '../../../lib/cache/useCachedResource';
+import { cacheKeys } from '../../../lib/cache/cacheKeys';
+import { cachePolicies } from '../../../lib/cache/cachePolicy';
+import { invalidateAchievementCaches } from '../../../lib/cache/invalidation';
 
 export const useGameAchievements = (gameId: string) => {
-  const [achievements, setAchievements] = useState<Achievement[]>([]);
-  const [loading, setLoading] = useState(true);
+  const resource = useCachedResource<Achievement[]>({
+    key: gameId ? cacheKeys.achievementsForGame(gameId) : 'achievements:missing',
+    fetcher: async () => {
+      if (!gameId || !window.api?.getGameAchievements) return [];
+      return await window.api.getGameAchievements(gameId);
+    },
+    policy: cachePolicies.achievements,
+    enabled: Boolean(gameId),
+    initialData: [],
+  });
 
-  const fetchAchievements = useCallback(async () => {
-    try {
-      if (window.api && window.api.getGameAchievements) {
-        const data = await window.api.getGameAchievements(gameId);
-        setAchievements(data || []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch achievements', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [gameId]);
+  const refreshResource = resource.refresh;
+
+  const refresh = useCallback(async () => {
+    invalidateAchievementCaches(gameId);
+    return (await refreshResource()) || [];
+  }, [gameId, refreshResource]);
 
   useEffect(() => {
-    fetchAchievements();
+    if (!gameId || !window.api?.onAchievementUnlocked) return;
+    const unsubscribe = window.api.onAchievementUnlocked((data: any) => {
+      if (String(data.gameId) === String(gameId)) {
+        void refresh();
+      }
+    });
+    return () => unsubscribe();
+  }, [gameId, refresh]);
 
-    if (window.api && window.api.onAchievementUnlocked) {
-      // Subscribe to real-time unlocks
-      const unsubscribe = window.api.onAchievementUnlocked((data: any) => {
-          // Check if the event matches the currently viewed game
-          if (String(data.gameId) === String(gameId)) {
-              // Re-fetch data from DB to update icons (Gray -> Colored) and unlocked status
-              fetchAchievements();
-          }
-      });
-      return () => unsubscribe();
-    }
-  }, [gameId, fetchAchievements]);
-
-  return { achievements, loading, refresh: fetchAchievements };
+  return {
+    achievements: resource.data || [],
+    loading: resource.loading,
+    refresh,
+  };
 };

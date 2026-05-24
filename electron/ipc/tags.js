@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import { db, rawDb } from '../db/client.js';
+import { emitDataChange } from '../services/DataChangeBus.js';
 
 export function registerTagHandlers() {
   // Get all available tags
@@ -12,6 +13,7 @@ export function registerTagHandlers() {
     const result = await db.insertInto('tags')
       .values({ name, color: color || '#ffffff' })
       .executeTakeFirst();
+    emitDataChange({ type: 'tag', source: 'tags:create', ids: [result.insertId], important: true });
     return { success: true, id: Number(result.insertId) };
   });
 
@@ -21,12 +23,14 @@ export function registerTagHandlers() {
       .set({ name, color })
       .where('id', '=', id)
       .execute();
+    emitDataChange({ type: 'tag', source: 'tags:update', ids: [id], important: true });
     return { success: true };
   });
 
   // Delete a tag (cascades to links)
   ipcMain.handle('tags:delete', async (event, id) => {
     await db.deleteFrom('tags').where('id', '=', id).execute();
+    emitDataChange({ type: 'tag', source: 'tags:delete', ids: [id], important: true });
     return { success: true };
   });
 
@@ -36,6 +40,7 @@ export function registerTagHandlers() {
       await db.insertInto('game_library_tags')
         .values({ game_id: String(gameId), tag_id: Number(tagId) })
         .execute();
+      emitDataChange({ type: 'tag', source: 'tags:tag-game', gameId, ids: [tagId], important: true });
       return { success: true };
     } catch (e) {
       // Ignore unique constraint errors (already tagged)
@@ -49,6 +54,7 @@ export function registerTagHandlers() {
       .where('game_id', '=', String(gameId))
       .where('tag_id', '=', Number(tagId))
       .execute();
+    emitDataChange({ type: 'tag', source: 'tags:untag-game', gameId, ids: [tagId], important: true });
     return { success: true };
   });
 
@@ -66,6 +72,7 @@ export function registerTagHandlers() {
         }));
         await trx.insertInto('game_library_tags').values(values).execute();
       }
+      emitDataChange({ type: 'tag', source: 'tags:set-game-tags', gameId, ids: tagIds, important: true });
       return { success: true };
     });
   });

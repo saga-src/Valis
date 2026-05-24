@@ -4,7 +4,6 @@ import { useSessionStore } from './store';
 import { System } from '../../lib/api';
 import { useMarkObserver } from '../gamification/hooks/useMarkObserver';
 import { useSocialBroadcast } from '../social/hooks/useSocialBroadcast';
-import { useAutoSync } from '../settings/hooks/useAutoSync';
 import { supabase } from '../../lib/cloud/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { CUSTOM_PLATFORM_DATA } from '../../types/index';
@@ -15,7 +14,6 @@ export const useSessionManager = () => {
   const [elapsed, setElapsed] = useState(0);
   const { reportSignal } = useMarkObserver();
   const { broadcastSession } = useSocialBroadcast();
-  const { performCloudUpload } = useAutoSync();
   const { user } = useAuth();
 
   useEffect(() => {
@@ -122,9 +120,6 @@ export const useSessionManager = () => {
         }
     })();
 
-    setTimeout(() => {
-      performCloudUpload().catch(err => console.error("Auto-backup failed:", err));
-    }, 5000);
   };
 
   return {

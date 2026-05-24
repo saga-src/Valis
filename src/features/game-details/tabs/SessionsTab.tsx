@@ -8,6 +8,10 @@ import ConfirmationModal from '../../../components/ui/ConfirmationModal';
 import { useToast } from '../../../context/ToastContext';
 import { PlatformIcon } from '../../../components/ui/PlatformIcon';
 import { CUSTOM_PLATFORM_DATA, CUSTOM_PLATFORMS } from '../../../types/index';
+import { useCachedResource } from '../../../lib/cache/useCachedResource';
+import { cacheKeys } from '../../../lib/cache/cacheKeys';
+import { cachePolicies } from '../../../lib/cache/cachePolicy';
+import { invalidateSessionCaches } from '../../../lib/cache/invalidation';
 
 interface SessionsTabProps {
   game: any;
@@ -20,6 +24,12 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({ game }) => {
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const sessionsResource = useCachedResource<any[]>({
+    key: cacheKeys.sessionsForGame(gameId),
+    fetcher: async () => window.api.getGameSessions(gameId),
+    policy: cachePolicies.sessions,
+    initialData: [],
+  });
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -31,8 +41,8 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({ game }) => {
 
   const loadSessions = async () => {
     try {
-      const data = await window.api.getGameSessions(gameId);
-      setSessions(data);
+      const data = await sessionsResource.refresh();
+      setSessions(data || []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -41,8 +51,9 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({ game }) => {
   };
 
   useEffect(() => {
-    loadSessions();
-  }, [gameId]);
+    setSessions(sessionsResource.data || []);
+    setLoading(sessionsResource.loading);
+  }, [sessionsResource.data, sessionsResource.loading]);
 
   // --- DERIVED DATA ---
 
@@ -160,6 +171,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({ game }) => {
             });
             toast.success("Session added");
         }
+        invalidateSessionCaches(gameId);
         setIsModalOpen(false);
         loadSessions();
     } catch (e) {
@@ -179,6 +191,7 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({ game }) => {
       try {
           await window.api.deleteSession(editingSession.id);
           toast.success("Session deleted");
+          invalidateSessionCaches(gameId);
           setShowDeleteConfirm(false);
           setIsModalOpen(false); // Close the editor as well
           loadSessions();

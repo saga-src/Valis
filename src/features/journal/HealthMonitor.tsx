@@ -20,6 +20,12 @@ interface HealthMonitorProps {
   sessions: any[];
 }
 
+const getSessionMinutes = (session: any) => {
+  if (typeof session.duration_minutes === 'number') return session.duration_minutes;
+  if (typeof session.duration_seconds === 'number') return session.duration_seconds / 60;
+  return 0;
+};
+
 export const HealthMonitor: React.FC<HealthMonitorProps> = ({ sessions }) => {
   const { totalMinutes, days } = useMemo(() => {
     const today = startOfDay(new Date());
@@ -31,12 +37,12 @@ export const HealthMonitor: React.FC<HealthMonitorProps> = ({ sessions }) => {
       return sDate >= last7Days[0]; // After start of 7 days ago
     });
 
-    const totalMinutes = recentSessions.reduce((acc, curr) => acc + (curr.duration_minutes || 0), 0);
+    const totalMinutes = recentSessions.reduce((acc, curr) => acc + getSessionMinutes(curr), 0);
 
     const daysMap = last7Days.map(date => {
       const minutes = recentSessions
         .filter(s => isSameDay(new Date(s.start_time), date))
-        .reduce((acc, curr) => acc + (curr.duration_minutes || 0), 0);
+        .reduce((acc, curr) => acc + getSessionMinutes(curr), 0);
       
       return { date, minutes };
     });

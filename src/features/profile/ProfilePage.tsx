@@ -55,6 +55,28 @@ export const ProfilePage: React.FC = () => {
          preferences: localProfile.preferences
      };
   } else if (cloudProfile) {
+     const cloudPerfectGames = (cloudProfile.perfect_games || []).map((game: any, idx: number) => ({
+        id: game.id || `show_${idx}`,
+        title: game.title,
+        cover_url: game.cover,
+        rating: undefined
+     }));
+
+     const localPerfectGames = isSelf
+        ? (localProfile.showcase || []).map(game => ({
+            id: game.id,
+            title: game.title,
+            cover_url: game.cover_url,
+            rating: game.rating
+        }))
+        : [];
+
+     const perfectGameMap = new Map<string, any>();
+     [...cloudPerfectGames, ...localPerfectGames].forEach((game) => {
+        const key = String(game.id || game.title);
+        perfectGameMap.set(key, game);
+     });
+
      // Map Cloud Data to UI Model
      displayProfile = {
         identity: {
@@ -72,10 +94,10 @@ export const ProfilePage: React.FC = () => {
             xp_progress_percent: 0 
         },
         stats: {
-            total_playtime: cloudProfile.total_playtime,
-            games_owned: cloudProfile.games_owned,
-            games_beaten: cloudProfile.games_beaten,
-            total_platinum: cloudProfile.total_platinum
+            total_playtime: Math.max(cloudProfile.total_playtime || 0, isSelf ? localProfile.stats.total_playtime : 0),
+            games_owned: Math.max(cloudProfile.games_owned || 0, isSelf ? localProfile.stats.games_owned : 0),
+            games_beaten: Math.max(cloudProfile.games_beaten || 0, isSelf ? localProfile.stats.games_beaten : 0),
+            total_platinum: Math.max(cloudProfile.total_platinum || 0, isSelf ? localProfile.stats.total_platinum : 0)
         },
         // Map Artifacts (Strings)
         artifacts: cloudProfile.artifacts || [],
@@ -84,12 +106,7 @@ export const ProfilePage: React.FC = () => {
         milestones: cloudProfile.milestones || {},
 
         // Map Completed Games to Showcase format
-        perfect_games: (cloudProfile.perfect_games || []).map((game, idx) => ({
-            id: `show_${idx}`,
-            title: game.title,
-            cover_url: game.cover,
-            rating: undefined 
-        })),
+        perfect_games: Array.from(perfectGameMap.values()),
         
         // Map Beaten Games
         beaten: cloudProfile.beaten_games_list || [],

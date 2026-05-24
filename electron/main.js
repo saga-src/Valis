@@ -15,6 +15,7 @@ import { registerImageHandlers } from './ipc/images.js'; // NEW
 import { registerTagHandlers } from './ipc/tags.js'; // NEW v1.1.0
 import { gameWatcher } from './services/ProcessWatcher.js';
 import { achievementWatcher } from './services/FileWatcherService.js';
+import { appSessionLog } from './services/AppSessionLogService.js';
 import * as igdb from './lib/igdb.js';
 import fs from 'fs';
 
@@ -258,6 +259,9 @@ if (!gotTheLock) {
   }
 
   app.whenReady().then(async () => {
+    const logPath = appSessionLog.start({ version: app.getVersion() });
+    console.log('[Main] App session log:', logPath);
+
     await initDB();
 
     // Updated to point to services folder and pass userData path for DB access
@@ -297,6 +301,10 @@ if (!gotTheLock) {
         mainWindow?.show();
       }
     });
+  });
+
+  app.on('will-quit', () => {
+    appSessionLog.end('app closed');
   });
 
   // --- SAFE EXIT HANDSHAKE INTERCEPT ---

@@ -1,5 +1,24 @@
 import { useEffect, useRef } from 'react';
 import { useLibraryStore } from '../../../store/libraryStore';
+import { getSetting, saveSetting } from '../../../lib/storage';
+import { useCacheStore } from '../../../store/cacheStore';
+import { cacheKeys } from '../../../lib/cache/cacheKeys';
+import { cachePolicies } from '../../../lib/cache/cachePolicy';
+
+const getCachedTags = async () => {
+  const cache = useCacheStore.getState();
+  const key = cacheKeys.tags;
+  if (cache.isFresh(key)) return cache.getEntry<any[]>(key)?.data || [];
+  cache.setLoading(key, cachePolicies.tags);
+  try {
+    const tags = await window.api.getTags();
+    cache.setEntry(key, tags || [], cachePolicies.tags);
+    return tags || [];
+  } catch (error) {
+    cache.setError(key, error, cachePolicies.tags);
+    throw error;
+  }
+};
 
 export const useTagFilters = () => {
   const { tagFilters, setTagFilters, setTags } = useLibraryStore();
@@ -14,8 +33,8 @@ export const useTagFilters = () => {
 
       try {
         const [savedFilters, availableTags] = await Promise.all([
-          window.api.getSetting('library_tag_filters'),
-          window.api.getTags()
+          getSetting('library_tag_filters'),
+          getCachedTags()
         ]);
 
         if (savedFilters) {
@@ -47,7 +66,7 @@ export const useTagFilters = () => {
       if (window.api) {
         try {
           // Fixed: window.api.saveSetting expects a single object payload { key, value }
-          await window.api.saveSetting({ key: 'library_tag_filters', value: tagFilters });
+          await saveSetting('library_tag_filters', tagFilters);
           console.log('[useTagFilters] Persisted filters to DB');
         } catch (error) {
           console.error('[useTagFilters] Save failed:', error);
@@ -63,6 +82,7 @@ export const useTagFilters = () => {
   const refreshTags = async () => {
     if (window.api) {
       const availableTags = await window.api.getTags();
+      useCacheStore.getState().setEntry(cacheKeys.tags, availableTags || [], cachePolicies.tags);
       setTags(availableTags);
     }
   };

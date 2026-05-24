@@ -7,6 +7,7 @@ import * as db from '../db/queries.js'; // Use the helper module which exports d
 import { resolvePath } from '../lib/pathUtils.js';
 import { db as kysely } from '../db/client.js'; // Direct Kysely instance for specific queries
 import { checkGameCompletion } from '../db/modules/achievements.js';
+import { emitDataChange } from './DataChangeBus.js';
 
 export class FileWatcherService {
   constructor() {
@@ -384,6 +385,13 @@ export class FileWatcherService {
                 type: type,
                 sessionId: currentActive ? currentActive.id : null,
                 timestamp: Date.now()
+            });
+            emitDataChange({
+                type: 'achievement',
+                source: forceSync ? 'achievements:scan' : 'achievement-watcher',
+                gameId,
+                ids: processedUnlocks.map(u => u.id),
+                important: true
             });
 
             // 6. ⚡ AUTOMATION: Check for 100% Completion

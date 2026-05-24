@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('api', {
   getSessions: (gameId) => ipcRenderer.invoke('db:get-sessions', gameId),
   getGameSessions: (gameId) => ipcRenderer.invoke('session:get-by-game', gameId),
   getAllSessions: () => ipcRenderer.invoke('db:get-all-sessions'),
+  getSessionsPage: (options) => ipcRenderer.invoke('session:get-page', options),
   getRecentSessions: (days) => ipcRenderer.invoke('session:get-recent', days),
   saveSession: (session) => ipcRenderer.invoke('db:save-session', session),
   startSession: (gameId, startTime) => ipcRenderer.invoke('session:start', { gameId, startTime }),
@@ -49,10 +50,16 @@ contextBridge.exposeInMainWorld('api', {
   },
   scanAchievements: () => ipcRenderer.invoke('achievements:scan'),
   refreshAchievementsMetadata: () => ipcRenderer.invoke('achievements:refresh-metadata'),
+  refreshGameAchievements: (gameId, options) => ipcRenderer.invoke('achievements:refresh-game', { gameId, ...(options || {}) }),
   onAchievementsRefreshProgress: (callback) => {
     const subscription = (_, data) => callback(data);
     ipcRenderer.on('achievements:refresh-progress', subscription);
     return () => ipcRenderer.removeListener('achievements:refresh-progress', subscription);
+  },
+  onGameAchievementsRefreshProgress: (callback) => {
+    const subscription = (_, data) => callback(data);
+    ipcRenderer.on('achievements:game-refresh-progress', subscription);
+    return () => ipcRenderer.removeListener('achievements:game-refresh-progress', subscription);
   },
 
   // Gamification
@@ -136,6 +143,11 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('steam:sync-progress', subscription);
     return () => ipcRenderer.removeListener('steam:sync-progress', subscription);
   },
+  onSocialBroadcastSync: (callback) => {
+    const subscription = (_, data) => callback(data);
+    ipcRenderer.on('SOCIAL_BROADCAST_SYNC', subscription);
+    return () => ipcRenderer.removeListener('SOCIAL_BROADCAST_SYNC', subscription);
+  },
 
   // Updater
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
@@ -203,6 +215,13 @@ contextBridge.exposeInMainWorld('api', {
     const subscription = (_, status) => callback(status);
     ipcRenderer.on('update-status', subscription);
     return () => ipcRenderer.removeListener('update-status', subscription);
+  },
+
+  // Data-change events
+  onDataChanged: (callback) => {
+    const subscription = (_, data) => callback(data);
+    ipcRenderer.on('data:changed', subscription);
+    return () => ipcRenderer.removeListener('data:changed', subscription);
   },
 
   // Notification

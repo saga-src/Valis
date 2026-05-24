@@ -1,23 +1,37 @@
 export const RELEASE_NOTES = {
-  version: "1.1.2",
-  title: "Performance & Profile Polish",
-  description: "This update focuses on quality-of-life improvements, lightning-fast load times for the social feed, and deeper customization for your gamer profile.",
+  version: "1.1.3",
+  title: "Reliability, Cache, and Analytics Polish",
+  description: "This update tightens the local-first data flow with shared caching, safer achievement sync, a sturdier analytics dashboard, and automatic cloud backup after important local changes.",
   features: [
     {
-      title: "🖱️ Library Context Menus",
-      description: "You can now right-click any game card in your library to instantly change its Status, manage its Tags, or open its installation folder without opening the Edit menu."
+      icon: "Database",
+      title: "Shared Page Cache",
+      description: "Library, sessions, game details, achievements, analytics, journal, quick play, settings, tags, and milestones now use shared cache and invalidation primitives."
     },
     {
-      title: "⚡ Instant Social Feed",
-      description: "The Social Feed now utilizes a smart local cache. It loads instantly the moment you open the app, pulling fresh network activity silently in the background."
+      icon: "Trophy",
+      title: "Per-Game Achievement Sync",
+      description: "Game Details now includes a Sync Missing action for supported Steam, PlayStation, and Xbox games, preserving local unlocks and timestamps."
     },
     {
-      title: "🎨 Profile Showcase Customization",
-      description: "Take control of your identity. You can now choose exactly which Career Milestones and Protocol Artifacts you want pinned to your public profile via the Edit Profile menu."
+      icon: "CloudArrowUp",
+      title: "Automatic Cloud Backup Queue",
+      description: "Important local writes now emit typed change events that schedule debounced, single-flight Supabase backups with dirty-state retry support."
     },
     {
-      title: "📐 Layout Stability",
-      description: "The Profile page has been redesigned with a strict vertical structure, completely eliminating the annoying layout shifts on different screen sizes."
+      icon: "BookOpen",
+      title: "Faster Journal Loading",
+      description: "The Journal loads sessions in pages with scroll-to-load behavior, keeping large histories responsive without losing date filtering."
+    },
+    {
+      icon: "LayoutDashboard",
+      title: "Analytics Dashboard Stability",
+      description: "Layouts are now versioned and validated before loading, with safer responsive breakpoints and new insight widgets for platforms, completion flow, and session streaks."
+    },
+    {
+      icon: "ScrollText",
+      title: "Rolling App Session Logs",
+      description: "Valis now writes a text log beside the database with the last three app sessions, including startup, shutdown, main-process logs, and renderer logs."
     }
   ]
 };

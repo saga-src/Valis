@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useJournal, Session } from './useJournal';
 import { BookOpen, CalendarOff, Calendar, X } from 'lucide-react';
 import { HealthMonitor } from './HealthMonitor';
@@ -27,9 +27,10 @@ const formatDateHeader = (dateStr: string) => {
 };
 
 export const JournalPage: React.FC = () => {
-  const { sessions, games, loading } = useJournal();
   const [filterDate, setFilterDate] = useState(''); // Format: YYYY-MM-DD
   const [showCalendar, setShowCalendar] = useState(false);
+  const { sessions, healthSessions, games, loading, loadingMore, hasMore, loadMore } = useJournal(filterDate);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // Group sessions by date
   const dailySessions = useMemo(() => {
@@ -42,12 +43,21 @@ export const JournalPage: React.FC = () => {
     return groups;
   }, [sessions]);
 
-  const allDateKeys = Object.keys(dailySessions);
-  
-  // Logic: Filter visible dates if filterDate is set
-  const visibleDates = filterDate 
-    ? allDateKeys.filter(date => date === filterDate)
-    : allDateKeys;
+  const visibleDates = Object.keys(dailySessions).sort((a, b) => b.localeCompare(a));
+
+  useEffect(() => {
+    if (!hasMore || loadingMore) return;
+
+    const target = loadMoreRef.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting) loadMore();
+    }, { rootMargin: '360px 0px' });
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore, loadingMore, visibleDates.length]);
 
   if (loading) return (
     <div className="p-12 flex justify-center h-full items-center">
@@ -125,7 +135,7 @@ export const JournalPage: React.FC = () => {
       </div>
 
       {/* Health Monitor Widget */}
-      <HealthMonitor sessions={sessions} />
+      <HealthMonitor sessions={healthSessions} />
       
       {visibleDates.length === 0 ? (
         <div className="text-center py-20 border-2 border-dashed rounded-2xl bg-muted/10 opacity-60">
@@ -170,6 +180,18 @@ export const JournalPage: React.FC = () => {
               </div>
             </div>
           ))}
+
+          {hasMore && (
+            <div ref={loadMoreRef} className="flex justify-center py-6">
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="px-4 py-2 rounded-lg border border-border bg-card text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60 disabled:cursor-wait transition-colors"
+              >
+                {loadingMore ? 'Loading sessions...' : 'Load more sessions'}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

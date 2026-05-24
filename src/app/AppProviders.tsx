@@ -16,6 +16,9 @@ import { useAchievements } from '../features/achievements/hooks/useAchievements'
 import { useMilestones } from '../features/gamification/hooks/useMilestones';
 import { useSessionStore } from '../features/session-tracker/store';
 import { useSocialBroadcast } from '../features/social/hooks/useSocialBroadcast';
+import { PlayerStatsService } from '../features/social/services/PlayerStatsService';
+import { handleDataChangeInvalidation } from '../lib/cache/invalidation';
+import { useCloudBackupQueue } from '../lib/cloud/useCloudBackupQueue';
 
 const PresenceSyncService: React.FC = () => {
   const { updateActivity } = usePresence();
@@ -41,6 +44,7 @@ const AppBackgroundServices: React.FC = () => {
   const { user } = useAuth();
   const { checkSyncOnLoad, performCloudUpload } = useAutoSync();
   const { broadcastSync } = useSocialBroadcast();
+  useCloudBackupQueue({ performCloudUpload });
 
   useEffect(() => {
     if (user) {
@@ -62,10 +66,8 @@ const AppBackgroundServices: React.FC = () => {
 
   // ⚡ SOCIAL SYNC LISTENER
   useEffect(() => {
-    // @ts-ignore
-    if (window.api && window.api.on) {
-        // @ts-ignore
-        const remove = window.api.on('SOCIAL_BROADCAST_SYNC', (data: any) => {
+    if (window.api?.onSocialBroadcastSync) {
+        const remove = window.api.onSocialBroadcastSync((data: any) => {
             if (user) {
                 broadcastSync(data.platform, data.added, data.achievements);
             }
@@ -75,11 +77,64 @@ const AppBackgroundServices: React.FC = () => {
   }, [user, broadcastSync]);
 
   useEffect(() => {
+    if (window.api?.onDataChanged) {
+      const remove = window.api.onDataChanged(handleDataChangeInvalidation);
+      return remove;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const syncCompletedProfileGame = async (event: Event) => {
+      const detail = (event as CustomEvent)?.detail;
+      if (detail?.type !== 'game' || detail?.source !== 'achievement-completion' || !detail.gameId) return;
+      if (!window.api?.getGameById) return;
+
+      try {
+        const game = await window.api.getGameById(detail.gameId);
+        if (!game || game.status !== 'Completed') return;
+
+        const achievements = window.api.getGameAchievements
+          ? await window.api.getGameAchievements(detail.gameId)
+          : [];
+        const totalAchievements = achievements.length;
+        const unlockedAchievements = achievements.filter((achievement: any) => achievement.unlockedAt || achievement.defaultUnlocked).length;
+        const achievementLabel = totalAchievements > 0
+          ? `${unlockedAchievements}/${totalAchievements}`
+          : '100%';
+
+        await Promise.all([
+          PlayerStatsService.syncBeatenGame(user.id, {
+            id: game.id,
+            title: game.title || game.name,
+            cover: game.cover_url || '',
+            score: game.final_score || 0
+          }),
+          PlayerStatsService.syncCompletedGame(user.id, {
+            id: game.id,
+            title: game.title || game.name,
+            cover: game.cover_url || '',
+            achievements: achievementLabel
+          })
+        ]);
+
+        window.dispatchEvent(new CustomEvent('valis-profile-data-refresh', { detail }));
+      } catch (error) {
+        console.error('[ProfileSync] Failed to sync completed achievement game:', error);
+      }
+    };
+
+    window.addEventListener('valis-data-update', syncCompletedProfileGame);
+    return () => window.removeEventListener('valis-data-update', syncCompletedProfileGame);
+  }, [user]);
+
+  useEffect(() => {
     if (window.api?.onAppClosing) {
       const remove = window.api.onAppClosing(async () => {
         if (user) {
           try {
-            await performCloudUpload();
+            await performCloudUpload({ reason: 'safe-exit', markDirty: true, force: true });
           } catch (e) {
             console.error('[SafeExit] Final cloud upload failed:', e);
           }

@@ -4,6 +4,51 @@ import * as db from '../db/queries.js';
 import { saveAchievementsToDb } from '../db/modules/achievements.js';
 import { getLibrary } from '../db/modules/games.js';
 import achievementOrchestrator from '../services/AchievementOrchestrator.js';
+import { getLinkedAccounts } from '../db/modules/settings.js';
+import { emitDataChange } from '../services/DataChangeBus.js';
+
+const hasValue = (value) => value !== undefined && value !== null && String(value) !== '' && String(value) !== 'undefined' && String(value) !== 'null';
+
+const countUnlocked = (achievements) => achievements.filter(a => a.unlockedAt || a.defaultUnlocked).length;
+
+async function resolveAchievementPlatform(game, requested = 'auto') {
+  const candidates = [];
+  if (hasValue(game.steam_id)) candidates.push('steam');
+  if (hasValue(game.xbox_market_id) || hasValue(game.xbox_store_id)) candidates.push('xbox');
+  if (hasValue(game.psn_trophy_id) || hasValue(game.psn_id)) candidates.push('psn');
+  if (hasValue(game.epic_id)) candidates.push('epic');
+
+  const platform = requested && requested !== 'auto' ? requested : candidates[0];
+  if (!platform) {
+    return { unsupported: true, error: 'No supported achievement platform ID is available for this game.' };
+  }
+
+  if (platform === 'epic') {
+    return { unsupported: true, platform, error: 'Epic per-game achievement sync is not available yet. Use the full Epic sync from Settings.' };
+  }
+
+  if (!candidates.includes(platform)) {
+    return { unsupported: true, platform, error: `This game does not have a ${platform.toUpperCase()} achievement ID.` };
+  }
+
+  const accounts = await getLinkedAccounts(platform);
+  if (!accounts || accounts.length === 0) {
+    return { unsupported: true, platform, error: `Link a ${platform.toUpperCase()} account in Settings before syncing this game.` };
+  }
+
+  const routedGame = { ...game };
+  if (platform !== 'steam') routedGame.steam_id = null;
+  if (platform !== 'xbox') {
+    routedGame.xbox_market_id = null;
+    routedGame.xbox_store_id = null;
+  }
+  if (platform !== 'psn') {
+    routedGame.psn_trophy_id = null;
+    routedGame.psn_id = null;
+  }
+
+  return { platform, routedGame };
+}
 
 export function setupAchievementsHandlers(mainWindow) {
   /**
@@ -84,7 +129,13 @@ export function setupAchievementsHandlers(mainWindow) {
             if (data && data.length > 0) {
                 console.log('[IPC] Saving', data.length, 'records for', game.title || game.name);
                 // ⚡ Use Universal Saver to persist definitions and progress
-                await saveAchievementsToDb(game.id, data);
+                const stats = await saveAchievementsToDb(game.id, data, { mode: 'lockedOnly' });
+                emitDataChange({
+                    type: 'achievement',
+                    source: 'achievements:refresh-metadata',
+                    gameId: game.id,
+                    important: stats.newlyUnlocked > 0 || stats.definitionsUpdated > 0
+                });
                 updated++;
             } else {
                 console.log('[IPC] No achievement data returned for:', game.title || game.name);
@@ -103,6 +154,96 @@ export function setupAchievementsHandlers(mainWindow) {
     } catch (error) {
       console.error('[IPC] Global refresh failed:', error);
       return { success: false, error: error.message };
+    }
+  });
+
+  /**
+   * Refresh achievements for one game only.
+   */
+  ipcMain.handle('achievements:refresh-game', async (event, payload = {}) => {
+    const gameId = String(payload.gameId || '');
+    const mode = payload.mode || 'lockedOnly';
+    const requestedPlatform = payload.platform || 'auto';
+
+    try {
+      if (!gameId) {
+        return { success: false, gameId, unsupported: true, error: 'Missing gameId.' };
+      }
+
+      const game = await db.getGameById(gameId);
+      if (!game) {
+        return { success: false, gameId, unsupported: true, error: 'Game not found.' };
+      }
+
+      const platformResolution = await resolveAchievementPlatform(game, requestedPlatform);
+      if (platformResolution.unsupported) {
+        return {
+          success: false,
+          gameId,
+          platform: platformResolution.platform,
+          unsupported: true,
+          error: platformResolution.error
+        };
+      }
+
+      const platform = platformResolution.platform;
+      event.sender.send('achievements:game-refresh-progress', {
+        gameId,
+        stage: 'fetching',
+        message: `Fetching ${platform.toUpperCase()} achievements...`
+      });
+
+      const before = await db.getAchievements(gameId);
+      const unlockedBefore = countUnlocked(before);
+      const data = await achievementOrchestrator.fetchAchievements(platformResolution.routedGame);
+
+      if (!data || data.length === 0) {
+        return {
+          success: false,
+          gameId,
+          platform,
+          unsupported: true,
+          error: 'No achievement data was returned for this game.'
+        };
+      }
+
+      event.sender.send('achievements:game-refresh-progress', {
+        gameId,
+        stage: 'saving',
+        message: `Saving ${data.length} achievements...`
+      });
+
+      const stats = await saveAchievementsToDb(gameId, data, { mode });
+      const after = await db.getAchievements(gameId);
+      const unlockedAfter = countUnlocked(after);
+      const newlyUnlocked = Math.max(0, unlockedAfter - unlockedBefore);
+
+      emitDataChange({
+        type: 'achievement',
+        source: 'achievements:refresh-game',
+        gameId,
+        important: newlyUnlocked > 0 || stats.definitionsUpdated > 0
+      });
+
+      event.sender.send('achievements:game-refresh-progress', {
+        gameId,
+        stage: 'done',
+        message: 'Achievement sync complete.'
+      });
+
+      return {
+        success: true,
+        gameId,
+        platform,
+        total: stats.total,
+        unlockedBefore,
+        unlockedAfter,
+        newlyUnlocked,
+        definitionsUpdated: stats.definitionsUpdated
+      };
+    } catch (error) {
+      console.error('[IPC] achievements:refresh-game failed:', error);
+      return { success: false, gameId, error: error.message };
     }
   });
 }

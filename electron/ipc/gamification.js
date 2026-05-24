@@ -1,6 +1,7 @@
 
 import { ipcMain } from 'electron';
 import * as db from '../db/modules/gamification.js';
+import { emitDataChange } from '../services/DataChangeBus.js';
 
 export function registerGamificationHandlers() {
   ipcMain.handle('getGamificationStatus', async (event) => {
@@ -22,16 +23,21 @@ export function registerGamificationHandlers() {
           });
         }
       });
+      emitDataChange({ type: 'gamification', source: 'getGamificationStatus:new-unlocks', important: true });
     }
     
     return data;
   });
 
   ipcMain.handle('unlockMark', async (event, markId) => {
-      return await db.unlockMark(markId);
+      const result = await db.unlockMark(markId);
+      if (result) emitDataChange({ type: 'gamification', source: 'unlockMark', ids: [markId], important: true });
+      return result;
   });
 
   ipcMain.handle('addPlaytimeXP', async (event, amount) => {
-      return await db.addPlaytimeXP(amount);
+      const result = await db.addPlaytimeXP(amount);
+      if (Number(amount) > 0) emitDataChange({ type: 'gamification', source: 'addPlaytimeXP', important: true });
+      return result;
   });
 }

@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
-import { Trophy, Lock, Search, Clock } from 'lucide-react';
+import { Trophy, Lock, Search, Clock, RefreshCw, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { cn } from '../../../lib/utils/cn';
+import { useManualAchievementSync } from '../hooks/useManualAchievementSync';
 
 interface AchievementsTabProps {
+  game: any;
   achievements: any[];
   loading: boolean;
+  onRefresh?: () => Promise<any>;
 }
 
-export const AchievementsTab = ({ achievements, loading }: AchievementsTabProps) => {
+export const AchievementsTab = ({ game, achievements, loading, onRefresh }: AchievementsTabProps) => {
   const [filter, setFilter] = useState<'all' | 'locked' | 'unlocked'>('all');
   const [search, setSearch] = useState('');
+  const manualSync = useManualAchievementSync(game, onRefresh);
 
   // Helper for dd/mm/yyyy hh:mm format
   const formatFullDate = (timestamp: string | number) => {
@@ -35,10 +39,41 @@ export const AchievementsTab = ({ achievements, loading }: AchievementsTabProps)
     </div>
   );
 
+  const syncButton = (
+    <div className="flex flex-col items-end gap-1">
+      <button
+        onClick={manualSync.sync}
+        disabled={manualSync.loading || !manualSync.supported}
+        title={!manualSync.supported ? manualSync.disabledReason : `Sync missing achievements from ${String(manualSync.platform).toUpperCase()}`}
+        className={cn(
+          "flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-black uppercase tracking-wide transition-colors",
+          manualSync.supported
+            ? "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
+            : "bg-muted/30 border-border text-muted-foreground cursor-not-allowed"
+        )}
+      >
+        {manualSync.loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+        Sync Missing
+      </button>
+      {manualSync.message && (
+        <div className={cn(
+          "flex items-center gap-1 text-[10px] font-bold max-w-56 text-right",
+          manualSync.state === 'success' && "text-emerald-500",
+          manualSync.state === 'error' && "text-destructive",
+          manualSync.state === 'unsupported' && "text-muted-foreground"
+        )}>
+          {manualSync.state === 'success' ? <CheckCircle2 size={10} /> : manualSync.state === 'idle' ? <AlertCircle size={10} /> : null}
+          <span className="truncate">{manualSync.message}</span>
+        </div>
+      )}
+    </div>
+  );
+
   if (achievements.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center p-8">
-        <div className="flex flex-col items-center justify-center p-12 text-muted-foreground space-y-4 bg-muted/10 rounded-2xl border border-border border-dashed w-full max-w-md">
+      <div className="h-full flex flex-col gap-4 p-8">
+        <div className="flex justify-end">{syncButton}</div>
+        <div className="flex flex-col items-center justify-center p-12 text-muted-foreground space-y-4 bg-muted/10 rounded-2xl border border-border border-dashed w-full max-w-md mx-auto">
           <Trophy size={48} className="opacity-20" />
           <p className="font-bold">No achievements tracked.</p>
           <p className="text-xs">Play the game to sync progress.</p>
@@ -80,7 +115,8 @@ export const AchievementsTab = ({ achievements, loading }: AchievementsTabProps)
         </div>
 
         {/* Controls */}
-        <div className="flex gap-3 flex-1 md:flex-none">
+        <div className="flex flex-col sm:flex-row gap-3 flex-1 md:flex-none md:items-start">
+           {syncButton}
            <div className="relative group flex-1 md:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors" size={16} />
               <input 

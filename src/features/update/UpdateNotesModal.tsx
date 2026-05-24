@@ -2,6 +2,12 @@ import React, { useState, useEffect } from 'react';
 import Modal from '../../components/ui/Modal';
 import { RELEASE_NOTES } from '../../data/releaseNotes';
 import { Check } from 'lucide-react';
+import * as Icons from 'lucide-react';
+
+const ReleaseIcon = ({ name }: { name?: string }) => {
+  const Icon = name && (Icons as any)[name] ? (Icons as any)[name] : Icons.Sparkles;
+  return <Icon size={18} />;
+};
 
 export const UpdateNotesModal: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -30,13 +36,18 @@ export const UpdateNotesModal: React.FC = () => {
       <div className="space-y-6">
         <div className="space-y-4">
           {RELEASE_NOTES.features.map((feature, index) => (
-            <div key={index} className="space-y-1">
-              <h4 className="font-bold text-foreground flex items-center gap-2">
-                {feature.title}
-              </h4>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                {feature.description}
-              </p>
+            <div key={index} className="flex gap-3">
+              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
+                <ReleaseIcon name={feature.icon} />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <h4 className="font-bold text-foreground">
+                  {feature.title}
+                </h4>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {feature.description}
+                </p>
+              </div>
             </div>
           ))}
         </div>

@@ -74,7 +74,7 @@ export const PlayerStatsService = {
         .from('player_stats')
         .select('beaten_games, games_beaten')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 
@@ -98,10 +98,11 @@ export const PlayerStatsService = {
         updatePayload.games_beaten = (data?.games_beaten || 0) + beatCountDelta;
       }
 
+      updatePayload.user_id = userId;
+
       const { error: updateError } = await supabase
         .from('player_stats')
-        .update(updatePayload)
-        .eq('user_id', userId);
+        .upsert(updatePayload, { onConflict: 'user_id' });
 
       if (updateError) throw updateError;
 
@@ -122,7 +123,7 @@ export const PlayerStatsService = {
         .from('player_stats')
         .select('completed_games, total_platinum')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
 
@@ -144,10 +145,11 @@ export const PlayerStatsService = {
         updatePayload.total_platinum = (data?.total_platinum || 0) + platCountDelta;
       }
 
+      updatePayload.user_id = userId;
+
       const { error: updateError } = await supabase
         .from('player_stats')
-        .update(updatePayload)
-        .eq('user_id', userId);
+        .upsert(updatePayload, { onConflict: 'user_id' });
 
       if (updateError) throw updateError;
 

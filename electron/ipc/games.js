@@ -8,6 +8,7 @@ import { cloudGate } from '../services/CloudGate.js';
 import achievementOrchestrator from '../services/AchievementOrchestrator.js';
 import { saveAchievementsToDb } from '../db/modules/achievements.js';
 import { incrementUserStat } from '../db/modules/gamification.js';
+import { emitDataChange } from '../services/DataChangeBus.js';
 
 // Helper to notify all windows
 const broadcastLibraryUpdate = (event) => {
@@ -33,11 +34,17 @@ const triggerAutoScrape = async (event, game, result) => {
                 .then(async (data) => {
                     if (data && data.length > 0) {
                         console.log(`[Auto-Scrape] Saved ${data.length} achievements for ${savedGame.name || savedGame.title}`);
-                        await saveAchievementsToDb(gameId, data);
+                        await saveAchievementsToDb(gameId, data, { mode: 'lockedOnly' });
                         // Notify frontend that achievements might have changed
                         if (event && event.sender && !event.sender.isDestroyed()) {
                             event.sender.send('achievements-updated', { gameId: gameId });
                         }
+                        emitDataChange({
+                            type: 'achievement',
+                            source: 'auto-scrape',
+                            gameId,
+                            important: true
+                        });
                     }
                 })
                 .catch(err => console.error('[Auto-Scrape] Failed:', err));
@@ -60,8 +67,10 @@ export function registerGameHandlers() {
     // ⚡ FABRICATOR TRIGGER: Increment if manual add
     if (result && result.success && !game.isSilent) {
         await incrementUserStat('manual_games_added', 1);
+        emitDataChange({ type: 'gamification', source: 'add-game', important: true });
     }
     broadcastLibraryUpdate(event);
+    emitDataChange({ type: 'library', source: 'add-game', gameId: game.id, important: true });
     triggerAutoScrape(event, game, result);
     return result;
   });
@@ -84,8 +93,10 @@ export function registerGameHandlers() {
     // ⚡ FABRICATOR TRIGGER
     if (result && result.success && !game.isSilent) {
         await incrementUserStat('manual_games_added', 1);
+        emitDataChange({ type: 'gamification', source: 'db:add-game', important: true });
     }
     broadcastLibraryUpdate(event);
+    emitDataChange({ type: 'library', source: 'db:add-game', gameId: game.id, important: true });
     triggerAutoScrape(event, game, result);
     return result;
   });
@@ -95,8 +106,10 @@ export function registerGameHandlers() {
     // ⚡ FABRICATOR TRIGGER
     if (result && result.success && !game.isSilent) {
         await incrementUserStat('manual_games_added', 1);
+        emitDataChange({ type: 'gamification', source: 'db:save-game', important: true });
     }
     broadcastLibraryUpdate(event);
+    emitDataChange({ type: 'library', source: 'db:save-game', gameId: game.id, important: true });
     triggerAutoScrape(event, game, result);
     return result;
   });
@@ -104,12 +117,14 @@ export function registerGameHandlers() {
   ipcMain.handle('db:update-game', async (event, game) => {
     const result = await db.updateGame(game);
     broadcastLibraryUpdate(event);
+    emitDataChange({ type: 'game', source: 'db:update-game', gameId: game.id, important: true });
     return result;
   });
 
   ipcMain.handle('db:delete-game', async (event, id) => {
     const result = await db.deleteGame(id);
     broadcastLibraryUpdate(event);
+    emitDataChange({ type: 'library', source: 'db:delete-game', gameId: id, important: true });
     return result;
   });
 
@@ -167,7 +182,10 @@ export function registerGameHandlers() {
           }
         } catch (e) {}
       }
-      if (updatedCount > 0) broadcastLibraryUpdate(event);
+      if (updatedCount > 0) {
+        broadcastLibraryUpdate(event);
+        emitDataChange({ type: 'library', source: 'db:refresh-metadata', important: false });
+      }
       return { success: true, count: updatedCount };
     } catch (error) {
       return { success: false, error: error.message };

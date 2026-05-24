@@ -5,6 +5,9 @@ import { System } from '../../../lib/api';
 import { useAuth } from '../../../context/AuthContext';
 import { PlayerStatsService } from '../../social/services/PlayerStatsService';
 import { PROGRESSION_TREE } from '../logic/milestones';
+import { useCacheStore } from '../../../store/cacheStore';
+import { cacheKeys } from '../../../lib/cache/cacheKeys';
+import { cachePolicies } from '../../../lib/cache/cachePolicy';
 
 interface GamificationState {
   level: number;
@@ -34,7 +37,16 @@ export const useGamification = () => {
   const refresh = useCallback(async () => {
     try {
       if (window.api && window.api.getGamificationStatus) {
-        const data = await window.api.getGamificationStatus();
+        const cache = useCacheStore.getState();
+        const cacheKey = cacheKeys.gamificationStatus;
+        let data = cache.isFresh(cacheKey)
+          ? cache.getEntry<any>(cacheKey)?.data
+          : null;
+
+        if (!data) {
+          data = await window.api.getGamificationStatus();
+          cache.setEntry(cacheKey, data, cachePolicies.gamification);
+        }
         const { metrics, totalXP, unlockedTiers, unlockedMarks, tree } = data;
 
         // Calculate Level based on Total XP using LEVELS definition
@@ -80,6 +92,7 @@ export const useGamification = () => {
         if (window.api && window.api.unlockMark) {
             await window.api.unlockMark(markId);
             System.log(`[Gamification] Mark unlocked: ${markId}`);
+            useCacheStore.getState().invalidate(cacheKeys.gamificationStatus);
             
             // Sync to Cloud
             if (user) {

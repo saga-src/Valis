@@ -1,37 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { getLibrary } from '../../../lib/storage';
+import { useCachedResource } from '../../../lib/cache/useCachedResource';
+import { cacheKeys } from '../../../lib/cache/cacheKeys';
+import { cachePolicies } from '../../../lib/cache/cachePolicy';
 
 export const useGameDlc = (parentGameId: string | number | undefined) => {
-  const [dlcs, setDlcs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const resource = useCachedResource<any[]>({
+    key: cacheKeys.library,
+    fetcher: getLibrary,
+    policy: cachePolicies.library,
+    enabled: Boolean(parentGameId),
+    initialData: [],
+  });
 
-  useEffect(() => {
-    const fetchDlcs = async () => {
-      setLoading(true);
-      try {
-        const library = await getLibrary();
-        
-        // Find games where parent_game_id matches the current ID
-        // Note: parent_game_id in DB is string or null
-        const children = library.filter((g: any) => 
-          g.parent_game_id && String(g.parent_game_id) === String(parentGameId)
-        );
+  const dlcs = useMemo(() => {
+    if (!parentGameId) return [];
+    return (resource.data || []).filter((g: any) =>
+      g.parent_game_id && String(g.parent_game_id) === String(parentGameId)
+    );
+  }, [parentGameId, resource.data]);
 
-        setDlcs(children);
-      } catch (e) {
-        console.error("Failed to load DLCs", e);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (parentGameId) {
-        fetchDlcs();
-    } else {
-        setLoading(false);
-        setDlcs([]);
-    }
-  }, [parentGameId]);
-
-  return { dlcs, loading };
+  return { dlcs, loading: resource.loading };
 };

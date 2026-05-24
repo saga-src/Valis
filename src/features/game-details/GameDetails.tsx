@@ -14,6 +14,10 @@ import { useToast } from '../../context/ToastContext';
 import { cn } from '../../lib/utils/cn';
 import { formatPlaytime } from '../../lib/utils/format';
 import { Games } from '../../lib/api';
+import { useCachedResource } from '../../lib/cache/useCachedResource';
+import { cacheKeys } from '../../lib/cache/cacheKeys';
+import { cachePolicies } from '../../lib/cache/cachePolicy';
+import { invalidateGameCaches } from '../../lib/cache/invalidation';
 
 // ⚡ New Components
 import { GameHero } from './components/GameHero';
@@ -30,10 +34,18 @@ export const GameDetails: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'sessions' | 'reviews' | 'achievements'>('overview');
 
+  const gameResource = useCachedResource<any | null>({
+    key: id ? cacheKeys.game(id) : 'game:missing',
+    fetcher: () => Games.getById(id!),
+    policy: cachePolicies.gameDetails,
+    enabled: Boolean(id),
+    initialData: null,
+  });
+
   const metadata = useGameMetadata(game);
   
   // ⚡ Fetch Achievements at top level to show counts in tabs
-  const { achievements, loading: achievementsLoading } = useGameAchievements(game?.id || '');
+  const { achievements, loading: achievementsLoading, refresh: refreshAchievements } = useGameAchievements(game?.id || '');
 
   // Modal States
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -42,7 +54,7 @@ export const GameDetails: React.FC = () => {
 
   const loadGame = async () => {
     try {
-      const data = await Games.getById(id!);
+      const data = await gameResource.refresh();
       setGame(data);
     } catch (err) {
       console.error(err);
@@ -52,13 +64,16 @@ export const GameDetails: React.FC = () => {
   };
 
   useEffect(() => {
-    if (id) loadGame();
-  }, [id]);
+    if (!id) return;
+    setGame(gameResource.data || null);
+    setLoading(gameResource.loading);
+  }, [id, gameResource.data, gameResource.loading]);
 
   const handleUpdateGame = async (updatedGame: any) => {
     // Note: Social broadcasting is now handled inside EditGameModal or useGameActions
-    await Games.update(updatedGame);
-    setGame(updatedGame);
+    const saved = await Games.update(updatedGame);
+    invalidateGameCaches(updatedGame.id);
+    setGame(saved || updatedGame);
   };
 
   const executeDelete = async () => {
@@ -176,7 +191,7 @@ export const GameDetails: React.FC = () => {
             )}
 
             {activeTab === 'achievements' && (
-                <AchievementsTab achievements={achievements} loading={achievementsLoading} />
+                <AchievementsTab game={game} achievements={achievements} loading={achievementsLoading} onRefresh={refreshAchievements} />
             )}
          </div>
 
