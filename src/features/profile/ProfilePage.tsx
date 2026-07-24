@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from '../../app/index';
+import { useNavigate, useParams } from '../../app/index';
 import { useAuth } from '../../context/AuthContext';
 import { useProfileData } from '../social/hooks/useProfileData';
 import { useUserProfile } from './hooks/useUserProfile';
@@ -22,6 +22,7 @@ import ProfileShareModal from './ProfileShareModal';
 
 export const ProfilePage: React.FC = () => {
   const { userId } = useParams<{ userId?: string }>();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { sendRequest, getFriendshipStatus } = useFriendSystem();
   
@@ -149,6 +150,12 @@ export const ProfilePage: React.FC = () => {
     setActionLoading(false);
   };
 
+  const handleOpenChat = () => {
+    const targetId = displayProfile?.identity?.id;
+    if (friendStatus !== 'friend' || !targetId) return;
+    navigate(`/community?chat=${encodeURIComponent(targetId)}`);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full min-h-[500px]">
@@ -251,9 +258,15 @@ export const ProfilePage: React.FC = () => {
                       {friendStatus === 'pending' ? 'Request Sent' : 'Add Friend'}
                   </button>
               )}
-              <button className="px-4 py-2 border border-border bg-card hover:bg-muted font-bold rounded-xl flex items-center gap-2 text-sm transition-all">
-                  <MessageSquare size={16} /> Message
-              </button>
+              {friendStatus === 'friend' && (
+                <button
+                  type="button"
+                  onClick={handleOpenChat}
+                  className="px-4 py-2 border border-border bg-card hover:bg-muted font-bold rounded-xl flex items-center gap-2 text-sm transition-all"
+                >
+                    <MessageSquare size={16} /> Message
+                </button>
+              )}
           </div>
       )}
 

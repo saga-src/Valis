@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/images/logo.png" alt="Valis Logo" width="120" height="120" />
   <h1>VALIS</h1>
-  <p><strong>v1.1.3 | Digital Game Journal</strong></p>
+  <p><strong>v1.2.0 | Digital Game Journal</strong></p>
   
   <p>
     <a href="#features">Features</a> •
@@ -41,6 +41,8 @@ The core of Valis is a cross-platform aggregator that treats your games as artif
 Valis tracks *how* you play, not just *if* you play.
 * **Automated Process Watcher:** Background service that detects linked .exe launches to auto-log sessions.
 * **Manual Control Timer:** High-precision timers for console gaming, or for users who simply prefer full manual control over the automated tracker.
+* **Second-Precision Editing:** Manual sessions preserve `HH:mm:ss`, with independent Start Now and End Now controls.
+* **Precise Historical Playtime:** Legacy playtime entries can be recorded and displayed down to individual seconds.
 * **Contextual Logging:** Track "Mood Pulse" (emotional state), smart tags, and markdown-based journal entries.
 
 ### 3. Deep Analytics Dashboard
@@ -63,6 +65,10 @@ Valis tracks *how* you play, not just *if* you play.
 ### 6. Valis Studio (Sharing)
 * **Card Generator:** Export high-res (1200x630) social cards.
 * **Templates:** Editorial, Retro (CRT), Polaroid, and Immersive styles.
+
+### 7. Community (Opt-In)
+* **Direct Friend Chat:** Authenticated friends can exchange persistent private text messages with live updates, profile shortcuts, and per-contact unread indicators.
+* **Social Hub:** Profiles, presence, friend requests, activity feed, and leaderboards remain optional cloud features.
 
 ## <a id="tech-stack"></a>🛠️ Tech Stack
 

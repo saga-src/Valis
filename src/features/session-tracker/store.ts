@@ -19,7 +19,7 @@ interface SessionState {
   } | null;
   lastUpdate: number; // Timestamp to trigger re-renders/refetches in components
   startTimer: (gameId: string, gameTitle: string, coverUrl?: string, platformId?: number, startTime?: number, existingSessionId?: string) => Promise<void>;
-  stopTimer: () => Promise<void>;
+  stopTimer: (endTime?: number) => Promise<boolean>;
   cancelTimer: () => void;
 
   // Draft State (Persists across navigation)
@@ -69,7 +69,7 @@ export const useSessionStore = create<SessionState>()(
         });
       },
 
-      stopTimer: async () => {
+      stopTimer: async (endTime = Date.now()) => {
         const { activeSession, draft } = get();
         
         if (activeSession && activeSession.sessionId) {
@@ -79,17 +79,23 @@ export const useSessionStore = create<SessionState>()(
                     mood: draft.mood,
                     notes: JSON.stringify(draft.notes), // Persist as JSON string for DB
                     journal: draft.journal,
-                    platform_id: draft.platformId || activeSession.platformId
+                    platform_id: draft.platformId || activeSession.platformId,
+                    end_time: endTime
                 };
                 
-                await window.api.endSession(activeSession.sessionId, sessionData);
+                const result = await window.api.endSession(activeSession.sessionId, sessionData);
+                if (!result?.success) {
+                    throw new Error(result?.error || 'The session could not be finalized');
+                }
             } catch (e) {
                 console.error('Failed to end session in DB:', e);
+                return false;
             }
         }
 
         set({ activeSession: null, lastUpdate: Date.now() });
         get().clearDraft();
+        return true;
       },
 
       cancelTimer: () => set({ activeSession: null }),

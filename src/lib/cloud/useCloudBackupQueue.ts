@@ -110,6 +110,7 @@ export function useCloudBackupQueue({ performCloudUpload }: CloudBackupQueueOpti
     const remove = window.api.onDataChanged((event: DataChangeEvent) => {
       if (!event.important) return;
       if (event.type === 'restore' || event.type === 'reset') return;
+      if (event.type === 'session' && event.source === 'session:start') return;
       void scheduleBackup(`${event.type}:${event.source}`);
     });
 

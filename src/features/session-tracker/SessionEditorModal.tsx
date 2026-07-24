@@ -40,24 +40,46 @@ const MOODS = ['🤩', '🙂', '😐', '😴', '😡', '😭'];
 const pad = (n: number) => n.toString().padStart(2, '0');
 
 const secondsToHms = (totalSeconds: number) => {
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = Math.floor(totalSeconds % 60);
+  const safeTotal = Number.isFinite(totalSeconds)
+    ? Math.max(0, Math.floor(totalSeconds))
+    : 0;
+  const h = Math.floor(safeTotal / 3600);
+  const m = Math.floor((safeTotal % 3600) / 60);
+  const s = safeTotal % 60;
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
 };
 
 const hmsToSeconds = (str: string) => {
   const parts = str.split(':').map(Number);
-  if (parts.length !== 3 || parts.some(isNaN)) return 0;
+  if (
+    parts.length !== 3 ||
+    parts.some((part) => !Number.isFinite(part) || part < 0 || !Number.isInteger(part)) ||
+    parts[1] > 59 ||
+    parts[2] > 59
+  ) {
+    return null;
+  }
+
   return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
 };
 
 const getSecondsFromMidnight = (timeStr: string) => {
   // timeStr is HH:mm or HH:mm:ss
   const parts = timeStr.split(':').map(Number);
-  const h = parts[0] || 0;
-  const m = parts[1] || 0;
-  const s = parts[2] || 0;
+  if (
+    (parts.length !== 2 && parts.length !== 3) ||
+    parts.some((part) => !Number.isFinite(part) || !Number.isInteger(part))
+  ) {
+    return null;
+  }
+
+  const h = parts[0];
+  const m = parts[1];
+  const s = parts[2] ?? 0;
+  if (h < 0 || h > 23 || m < 0 || m > 59 || s < 0 || s > 59) {
+    return null;
+  }
+
   return (h * 3600) + (m * 60) + s;
 };
 
@@ -67,6 +89,17 @@ const formatTimeInput = (secondsFromMidnight: number) => {
   while (s < 0) s += 86400;
   s = s % 86400;
   return secondsToHms(s);
+};
+
+const formatDateInput = (date: Date) =>
+  `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+
+const formatDateTimeInput = (date: Date) =>
+  `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+
+const parseLocalDateTime = (date: string, time: string) => {
+  const parsed = new Date(`${date}T${time}`);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
 };
 
 export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({ 
@@ -90,6 +123,7 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
   const [startTime, setStartTime] = useState('00:00:00');
   const [endTime, setEndTime] = useState('00:00:00');
   const [durationStr, setDurationStr] = useState('00:00:00');
+  const [timeError, setTimeError] = useState<string | null>(null);
   
   // Metadata
   const [platformId, setPlatformId] = useState<number | ''>('');
@@ -108,10 +142,11 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
         const dur = initialData.durationSeconds || 0;
         const end = new Date(start.getTime() + dur * 1000);
 
-        setDate(`${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`);
-        setStartTime(`${pad(start.getHours())}:${pad(start.getMinutes())}:${pad(start.getSeconds())}`);
-        setEndTime(`${pad(end.getHours())}:${pad(end.getMinutes())}:${pad(end.getSeconds())}`);
+        setDate(formatDateInput(start));
+        setStartTime(formatDateTimeInput(start));
+        setEndTime(formatDateTimeInput(end));
         setDurationStr(secondsToHms(dur));
+        setTimeError(null);
 
         setPlatformId(initialData.platformId || '');
         setMood(initialData.mood || '🙂');
@@ -138,10 +173,11 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
         const now = new Date();
         const oneHourLater = new Date(now.getTime() + 3600000);
         
-        setDate(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`);
-        setStartTime(`${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(0)}`);
-        setEndTime(`${pad(oneHourLater.getHours())}:${pad(oneHourLater.getMinutes())}:${pad(0)}`);
+        setDate(formatDateInput(now));
+        setStartTime(formatDateTimeInput(now));
+        setEndTime(formatDateTimeInput(oneHourLater));
         setDurationStr('01:00:00');
+        setTimeError(null);
         
         setPlatformId('');
         setMood('🙂');
@@ -158,6 +194,12 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
   const handleStartTimeBlur = () => {
     const startSec = getSecondsFromMidnight(startTime);
     const durSec = hmsToSeconds(durationStr);
+    if (startSec === null || durSec === null) {
+      setTimeError('Use valid Start and Duration values in HH:mm:ss.');
+      return;
+    }
+
+    setTimeError(null);
     const endSec = startSec + durSec;
     setEndTime(formatTimeInput(endSec));
   };
@@ -166,6 +208,12 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
   const handleDurationBlur = () => {
     const startSec = getSecondsFromMidnight(startTime);
     const durSec = hmsToSeconds(durationStr);
+    if (startSec === null || durSec === null) {
+      setTimeError('Use a non-negative Duration in HH:mm:ss.');
+      return;
+    }
+
+    setTimeError(null);
     const endSec = startSec + durSec;
     setEndTime(formatTimeInput(endSec));
   };
@@ -174,6 +222,10 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
   const handleEndTimeBlur = () => {
     const startSec = getSecondsFromMidnight(startTime);
     let endSec = getSecondsFromMidnight(endTime);
+    if (startSec === null || endSec === null) {
+      setTimeError('Use valid Start and End values in HH:mm:ss.');
+      return;
+    }
     
     // Handle day wrap (e.g. 23:00 -> 01:00 is 2 hours, not -22 hours)
     if (endSec < startSec) {
@@ -181,7 +233,43 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
     }
     
     const diff = endSec - startSec;
+    setTimeError(null);
     setDurationStr(secondsToHms(diff));
+  };
+
+  const handleStartNow = () => {
+    const durationSeconds = hmsToSeconds(durationStr);
+    if (durationSeconds === null) {
+      setTimeError('Use a non-negative Duration in HH:mm:ss.');
+      return;
+    }
+
+    const now = new Date();
+    const startSeconds = getSecondsFromMidnight(formatDateTimeInput(now));
+    if (startSeconds === null) return;
+
+    setDate(formatDateInput(now));
+    setStartTime(formatDateTimeInput(now));
+    setEndTime(formatTimeInput(startSeconds + durationSeconds));
+    setTimeError(null);
+  };
+
+  const handleEndNow = () => {
+    const now = new Date();
+    const start = parseLocalDateTime(date, startTime);
+    setEndTime(formatDateTimeInput(now));
+
+    if (!start) {
+      setTimeError('Choose a valid Date and Start before setting End to now.');
+      return;
+    }
+
+    const elapsedSeconds = Math.max(
+      0,
+      Math.floor((now.getTime() - start.getTime()) / 1000),
+    );
+    setDurationStr(secondsToHms(elapsedSeconds));
+    setTimeError(null);
   };
 
   // --- TAG HANDLERS ---
@@ -219,13 +307,22 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
     if (!date || !startTime) return;
 
     // Construct Timestamp
-    const dateTimeStr = `${date}T${startTime}`;
-    const startObj = new Date(dateTimeStr);
+    const startObj = parseLocalDateTime(date, startTime);
+    if (!startObj) {
+      setTimeError('Choose a valid Date and Start before saving.');
+      return;
+    }
+
     const timestamp = startObj.getTime();
     const happenedAt = startObj.toISOString();
 
     // Duration
     const durationSeconds = hmsToSeconds(durationStr);
+    if (durationSeconds === null || !Number.isFinite(durationSeconds) || durationSeconds < 0) {
+      setTimeError('Use a non-negative Duration in HH:mm:ss.');
+      return;
+    }
+    setTimeError(null);
 
     // 1. Prepare Local Data
     const sessionData = {
@@ -451,12 +548,26 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
             <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center">
                 {/* Start */}
                 <div className="space-y-1">
-                    <span className="text-[9px] font-bold text-muted-foreground uppercase ml-1">Start</span>
+                    <div className="flex items-center justify-between gap-2 px-1">
+                      <span className="text-[9px] font-bold text-muted-foreground uppercase">Start</span>
+                      <button
+                        type="button"
+                        onClick={handleStartNow}
+                        className="flex items-center gap-1 text-[9px] font-bold text-primary hover:text-primary/80 transition-colors"
+                        title="Set Start to the exact current time"
+                        aria-label="Set Start to the exact current time"
+                      >
+                        <Clock size={10} /> Start Now
+                      </button>
+                    </div>
                     <input 
                         type="time" 
                         step="1"
                         value={startTime}
-                        onChange={(e) => setStartTime(e.target.value)}
+                        onChange={(e) => {
+                          setStartTime(e.target.value);
+                          setTimeError(null);
+                        }}
                         onBlur={handleStartTimeBlur}
                         className="w-full bg-background border border-border rounded-lg p-2 text-center text-sm font-mono font-bold focus:border-primary focus:ring-1 focus:ring-primary outline-none"
                     />
@@ -466,12 +577,26 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
 
                 {/* End */}
                 <div className="space-y-1">
-                    <span className="text-[9px] font-bold text-muted-foreground uppercase ml-1">End</span>
+                    <div className="flex items-center justify-between gap-2 px-1">
+                      <span className="text-[9px] font-bold text-muted-foreground uppercase">End</span>
+                      <button
+                        type="button"
+                        onClick={handleEndNow}
+                        className="flex items-center gap-1 text-[9px] font-bold text-primary hover:text-primary/80 transition-colors"
+                        title="Set End to the exact current time"
+                        aria-label="Set End to the exact current time"
+                      >
+                        <Clock size={10} /> End Now
+                      </button>
+                    </div>
                     <input 
                         type="time" 
                         step="1"
                         value={endTime}
-                        onChange={(e) => setEndTime(e.target.value)}
+                        onChange={(e) => {
+                          setEndTime(e.target.value);
+                          setTimeError(null);
+                        }}
                         onBlur={handleEndTimeBlur} // Calc Duration
                         className="w-full bg-background border border-border rounded-lg p-2 text-center text-sm font-mono font-bold focus:border-primary focus:ring-1 focus:ring-primary outline-none"
                     />
@@ -484,12 +609,20 @@ export const SessionEditorModal: React.FC<SessionEditorModalProps> = ({
                 <input 
                     type="text" 
                     value={durationStr}
-                    onChange={(e) => setDurationStr(e.target.value)}
+                    onChange={(e) => {
+                      setDurationStr(e.target.value);
+                      setTimeError(null);
+                    }}
                     onBlur={handleDurationBlur} // Calc End Time
                     placeholder="00:00:00"
                     className="w-full bg-background border border-border rounded-lg py-2.5 pl-20 pr-4 text-right text-sm font-mono font-bold focus:border-primary focus:ring-1 focus:ring-primary outline-none"
                 />
             </div>
+            {timeError && (
+              <p className="text-[10px] text-red-500 font-medium" role="alert">
+                {timeError}
+              </p>
+            )}
         </div>
 
         {/* ROW 3: Platform & Mood */}

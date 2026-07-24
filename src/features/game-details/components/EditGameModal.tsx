@@ -47,6 +47,54 @@ const STATIC_PLATFORM_NAMES: Record<number, string> = {
   99999: 'Unofficial Copy'
 };
 
+const MAX_HISTORICAL_HOURS = 999999;
+
+const parseHistoricalPart = (value: string, maximum: number) => {
+  if (value.trim() === '') return 0;
+  const parsed = Number(value);
+  if (
+    !Number.isSafeInteger(parsed) ||
+    parsed < 0 ||
+    parsed > maximum
+  ) {
+    return null;
+  }
+  return parsed;
+};
+
+const parseHistoricalDuration = (
+  hours: string,
+  minutes: string,
+  seconds: string,
+) => {
+  const parsedHours = parseHistoricalPart(hours, MAX_HISTORICAL_HOURS);
+  const parsedMinutes = parseHistoricalPart(minutes, 59);
+  const parsedSeconds = parseHistoricalPart(seconds, 59);
+
+  if (
+    parsedHours === null ||
+    parsedMinutes === null ||
+    parsedSeconds === null
+  ) {
+    return null;
+  }
+
+  const totalSeconds =
+    (parsedHours * 3600) + (parsedMinutes * 60) + parsedSeconds;
+  return Number.isSafeInteger(totalSeconds) ? totalSeconds : null;
+};
+
+const formatHistoricalDuration = (totalSeconds: number) => {
+  const safeSeconds = Number.isFinite(totalSeconds)
+    ? Math.max(0, Math.floor(totalSeconds))
+    : 0;
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+
+  return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
+};
+
 export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuccess }: EditGameModalProps) {
   const { toast } = useToast();
   const { broadcastStatusChange } = useSocialBroadcast();
@@ -104,6 +152,7 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
   const [newHours, setNewHours] = useState('');
   const [newMinutes, setNewMinutes] = useState('');
   const [newSeconds, setNewSeconds] = useState('');
+  const [legacyInputError, setLegacyInputError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -138,6 +187,7 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
         setNewHours('');
         setNewMinutes('');
         setNewSeconds('');
+        setLegacyInputError(null);
         setNewSource('Manual');
         setPlatformToAdd('');
         setPriceToAdd('');
@@ -189,6 +239,16 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
     options.push({ id: 99999, name: 'Unofficial Copy' }, { id: 100000, name: 'SteamTools' });
     return options.filter(p => !ownedPlatforms.some(op => op.id === p.id));
   }, [game, ownedPlatforms]);
+
+  const pendingHistoricalSeconds = useMemo(
+    () => parseHistoricalDuration(newHours, newMinutes, newSeconds),
+    [newHours, newMinutes, newSeconds],
+  );
+
+  const canAddHistoricalEntry =
+    pendingHistoricalSeconds !== null &&
+    pendingHistoricalSeconds > 0 &&
+    newSource.trim().length > 0;
 
   // --- Tag Management ---
   const filteredTagSuggestions = useMemo(() => {
@@ -248,20 +308,38 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
   };
 
   const handleAddEntry = () => {
-    const h = parseInt(newHours) || 0;
-    const m = parseInt(newMinutes) || 0;
-    const s = parseInt(newSeconds) || 0;
-    const totalSeconds = (h * 3600) + (m * 60) + s;
-    if (totalSeconds <= 0) return;
-    const existingIndex = legacyEntries.findIndex(e => e.source?.toLowerCase().trim() === newSource.toLowerCase().trim());
+    const totalSeconds = parseHistoricalDuration(
+      newHours,
+      newMinutes,
+      newSeconds,
+    );
+    if (totalSeconds === null) {
+      setLegacyInputError(
+        `Use whole, non-negative values: H up to ${MAX_HISTORICAL_HOURS}, M and S from 0 to 59.`,
+      );
+      return;
+    }
+    if (totalSeconds <= 0) {
+      setLegacyInputError('Historical playtime must be greater than zero.');
+      return;
+    }
+
+    const normalizedSource = newSource.trim();
+    if (!normalizedSource) {
+      setLegacyInputError('Choose a source for this historical playtime.');
+      return;
+    }
+
+    const existingIndex = legacyEntries.findIndex(e => e.source?.toLowerCase().trim() === normalizedSource.toLowerCase());
     if (existingIndex !== -1) {
         const updatedEntries = [...legacyEntries];
         updatedEntries[existingIndex] = { ...updatedEntries[existingIndex], seconds: totalSeconds };
         setLegacyEntries(updatedEntries);
     } else {
-        setLegacyEntries([...legacyEntries, { source: newSource, platform_id: null, seconds: totalSeconds }]);
+        setLegacyEntries([...legacyEntries, { source: normalizedSource, platform_id: null, seconds: totalSeconds }]);
     }
     setNewHours(''); setNewMinutes(''); setNewSeconds(''); setNewSource('Manual');
+    setLegacyInputError(null);
   };
 
   const handleLinkExecutable = async () => {
@@ -538,14 +616,15 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
                   {legacyEntries.map((entry, idx) => (
                       <div key={idx} className="grid grid-cols-12 gap-4 px-4 py-2 items-center text-sm hover:bg-muted/20 transition-colors">
                           <div className="col-span-7 font-bold truncate">{entry.source}</div>
-                          <div className="col-span-3 text-right font-mono text-xs">{(entry.seconds / 3600).toFixed(1)}h</div>
+                           <div className="col-span-3 text-right font-mono text-xs">{formatHistoricalDuration(entry.seconds)}</div>
                           <div className="col-span-2 flex justify-end gap-1">
                               <button onClick={() => {
                                   setNewSource(entry.source);
                                   setNewHours(String(Math.floor(entry.seconds / 3600)));
-                                  setNewMinutes(String(Math.floor((entry.seconds % 3600) / 60)));
-                                  setNewSeconds(String(entry.seconds % 60));
-                                  handleRemoveLegacyEntry(idx);
+                                   setNewMinutes(String(Math.floor((entry.seconds % 3600) / 60)));
+                                   setNewSeconds(String(entry.seconds % 60));
+                                   setLegacyInputError(null);
+                                   handleRemoveLegacyEntry(idx);
                               }} className="text-muted-foreground hover:text-primary p-1.5 rounded-md transition-colors"><Pencil size={14} /></button>
                               <button onClick={() => handleRemoveLegacyEntry(idx)} className="text-muted-foreground hover:text-destructive p-1.5 rounded-md transition-colors"><Trash2 size={14} /></button>
                           </div>
@@ -553,14 +632,34 @@ export default function EditGameModal({ isOpen, onClose, game, onSave, onSaveSuc
                   ))}
                   {legacyEntries.length === 0 && <div className="p-4 text-center text-xs text-muted-foreground italic">No historical playtime.</div>}
               </div>
-              <div className="bg-muted/40 border-t border-border/50 p-3 flex gap-2 items-center">
-                 <select value={newSource} onChange={(e) => setNewSource(e.target.value)} className="flex-1 bg-background border border-border/50 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary">
-                    {platformOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                 </select>
-                 <input type="number" min="0" placeholder="H" value={newHours} onChange={(e) => setNewHours(e.target.value)} className="w-12 bg-background border border-border/50 rounded-lg px-1 py-1.5 text-xs text-center outline-none" />
-                 <input type="number" min="0" max="59" placeholder="M" value={newMinutes} onChange={(e) => setNewMinutes(e.target.value)} className="w-12 bg-background border border-border/50 rounded-lg px-1 py-1.5 text-xs text-center outline-none" />
-                 <button onClick={handleAddEntry} disabled={!newHours && !newMinutes} className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-lg transition-colors border border-border/50"><Plus size={16} /></button>
-              </div>
+               <div className="bg-muted/40 border-t border-border/50 p-3">
+                <div className="flex gap-2 items-center">
+                  <select value={newSource} onChange={(e) => {
+                    setNewSource(e.target.value);
+                    setLegacyInputError(null);
+                  }} className="flex-1 bg-background border border-border/50 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary">
+                     {platformOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                  <input type="number" min="0" max={MAX_HISTORICAL_HOURS} step="1" placeholder="H" aria-label="Historical playtime hours" value={newHours} onChange={(e) => {
+                    setNewHours(e.target.value);
+                    setLegacyInputError(null);
+                  }} className="w-12 bg-background border border-border/50 rounded-lg px-1 py-1.5 text-xs text-center outline-none" />
+                  <input type="number" min="0" max="59" step="1" placeholder="M" aria-label="Historical playtime minutes" value={newMinutes} onChange={(e) => {
+                    setNewMinutes(e.target.value);
+                    setLegacyInputError(null);
+                  }} className="w-12 bg-background border border-border/50 rounded-lg px-1 py-1.5 text-xs text-center outline-none" />
+                  <input type="number" min="0" max="59" step="1" placeholder="S" aria-label="Historical playtime seconds" value={newSeconds} onChange={(e) => {
+                    setNewSeconds(e.target.value);
+                    setLegacyInputError(null);
+                  }} className="w-12 bg-background border border-border/50 rounded-lg px-1 py-1.5 text-xs text-center outline-none" />
+                  <button onClick={handleAddEntry} disabled={!canAddHistoricalEntry} title="Add historical playtime" aria-label="Add historical playtime" className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-lg transition-colors border border-border/50 disabled:opacity-40"><Plus size={16} /></button>
+                </div>
+                {legacyInputError && (
+                  <p className="mt-2 text-[10px] text-red-500 font-medium" role="alert">
+                    {legacyInputError}
+                  </p>
+                )}
+               </div>
           </div>
         </div>
 

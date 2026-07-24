@@ -19,6 +19,7 @@ import { useSocialBroadcast } from '../features/social/hooks/useSocialBroadcast'
 import { PlayerStatsService } from '../features/social/services/PlayerStatsService';
 import { handleDataChangeInvalidation } from '../lib/cache/invalidation';
 import { useCloudBackupQueue } from '../lib/cloud/useCloudBackupQueue';
+import { DirectMessageUnreadProvider } from '../context/DirectMessageUnreadContext';
 
 const PresenceSyncService: React.FC = () => {
   const { updateActivity } = usePresence();
@@ -166,15 +167,17 @@ export const AppProviders: React.FC<AppProvidersProps> = ({ children }) => {
   return (
     <ToastProvider>
       <AuthProvider>
-        <PresenceProvider>
-          <OnboardingProvider>
-            <HashRouter>
-              <AppBackgroundServices />
-              <AchievementNotifier />
-              {children}
-            </HashRouter>
-          </OnboardingProvider>
-        </PresenceProvider>
+        <DirectMessageUnreadProvider>
+          <PresenceProvider>
+            <OnboardingProvider>
+              <HashRouter>
+                <AppBackgroundServices />
+                <AchievementNotifier />
+                {children}
+              </HashRouter>
+            </OnboardingProvider>
+          </PresenceProvider>
+        </DirectMessageUnreadProvider>
       </AuthProvider>
     </ToastProvider>
   );

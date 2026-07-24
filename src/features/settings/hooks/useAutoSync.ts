@@ -3,6 +3,7 @@ import { supabase } from '../../../lib/cloud/supabase';
 import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { setCloudBackupSuppressed } from '../../../lib/cloud/cloudBackupState';
+import { useSessionStore } from '../../session-tracker/store';
 
 type CloudUploadOptions = {
   reason?: string;
@@ -10,7 +11,7 @@ type CloudUploadOptions = {
   force?: boolean;
 };
 
-let uploadInFlight: Promise<void> | null = null;
+let uploadQueue: Promise<void> = Promise.resolve();
 
 export const useAutoSync = () => {
   const { user } = useAuth();
@@ -20,12 +21,7 @@ export const useAutoSync = () => {
   const performCloudUpload = useCallback(async (options: CloudUploadOptions = {}) => {
     if (!user || !window.api) return;
 
-    if (uploadInFlight) {
-      await uploadInFlight;
-      if (!options.force) return;
-    }
-
-    uploadInFlight = (async () => {
+    const upload = uploadQueue.catch(() => {}).then(async () => {
       if (options.markDirty) {
         await window.api.setSystemMeta('cloud_backup_dirty', '1');
       }
@@ -33,9 +29,10 @@ export const useAutoSync = () => {
       const rawData = await window.api.getDatabaseDump();
       const blob = new Blob([JSON.stringify(rawData)], { type: 'application/json' });
 
-      await supabase.storage
+      const { error } = await supabase.storage
         .from('backups')
         .upload(`${user.id}/valis_autobackup.json`, blob, { upsert: true });
+      if (error) throw error;
 
       const syncedAt = Date.now().toString();
       await Promise.all([
@@ -44,21 +41,24 @@ export const useAutoSync = () => {
         window.api.setSystemMeta('cloud_backup_dirty', '0'),
         window.api.setSystemMeta('last_backup_reason', options.reason || 'manual'),
       ]);
-    })().finally(() => {
-      uploadInFlight = null;
     });
 
-    await uploadInFlight;
+    uploadQueue = upload;
+    await upload;
   }, [user]);
 
   const downloadAndRestore = useCallback(async (path: string) => {
     setCloudBackupSuppressed(true);
     try {
-      const { data } = await supabase.storage.from('backups').download(path);
+      const { data, error } = await supabase.storage.from('backups').download(path);
+      if (error) throw error;
       if (data) {
         const jsonText = await data.text();
         const jsonData = JSON.parse(jsonText);
-        await window.api.restoreBackup(jsonData.data);
+        const result = await window.api.restoreBackup(jsonData.data);
+        if (!result?.success) {
+          throw new Error(result?.error || 'Cloud backup restore failed');
+        }
         await window.api.setSystemMeta('cloud_backup_dirty', '0');
       }
     } finally {
@@ -108,6 +108,7 @@ export const useAutoSync = () => {
         toast.info('Syncing account...');
 
         if (cloudFileExists) {
+          if (useSessionStore.getState().activeSession) return;
           await downloadAndRestore(cloudFile);
           await window.api.setSystemMeta('last_synced_at', cloudTimestamp.toString());
           toast.success('Cloud data restored.');
@@ -117,10 +118,20 @@ export const useAutoSync = () => {
         }
         await window.api.setSystemMeta('owner_id', user.id);
       } else if (cloudFileExists && cloudTimestamp > localTimestamp) {
-        toast.info('Syncing from cloud...');
-        await downloadAndRestore(cloudFile);
-        await window.api.setSystemMeta('last_synced_at', cloudTimestamp.toString());
-        toast.success('Cloud changes applied.');
+        const latestMeta = await window.api.getSystemMeta();
+        const hasActiveSession = Boolean(useSessionStore.getState().activeSession);
+        const hasUnsyncedLocalChanges = latestMeta.cloud_backup_dirty === '1';
+
+        if (hasActiveSession) {
+          return;
+        } else if (hasUnsyncedLocalChanges) {
+          await performCloudUpload({ reason: 'local-dirty-conflict', markDirty: true, force: true });
+        } else {
+          toast.info('Syncing from cloud...');
+          await downloadAndRestore(cloudFile);
+          await window.api.setSystemMeta('last_synced_at', cloudTimestamp.toString());
+          toast.success('Cloud changes applied.');
+        }
       } else if (!cloudFileExists) {
         await performCloudUpload({ reason: 'first-cloud-upload', markDirty: true, force: true });
         await window.api.setSystemMeta('owner_id', user.id);

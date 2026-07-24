@@ -40,7 +40,7 @@ export async function endSession(sessionId, dataOrEndTime = Date.now()) {
       if (notes) await saveGameTags(session.game_id, notes);
     }
 
-    const duration = Math.round((endTime - session.start_time) / 1000);
+    const duration = Math.max(0, Math.round((endTime - session.start_time) / 1000));
     
     await db.updateTable('sessions')
       .set({ ...updateFields, end_time: endTime, duration_seconds: duration })
@@ -54,7 +54,14 @@ export async function endSession(sessionId, dataOrEndTime = Date.now()) {
     if (game && (game.status === 'Beat' || game.status === 'Completed')) {
         await incrementUserStat('veteran_sessions', 1);
     }
+
+    return await db.selectFrom('sessions')
+      .selectAll()
+      .where('id', '=', sessionId)
+      .executeTakeFirst();
   }
+
+  return null;
 }
 
 export async function addManualSession(sessionData) {

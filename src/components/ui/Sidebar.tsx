@@ -1,7 +1,7 @@
 import React from 'react';
 // Fix: Import Link and useLocation from local shim index file to avoid casing conflict with App.tsx
 import { Link, useLocation } from '../../app/index';
-import { Library, PlusCircle, BarChart2, Settings, User, Play, BookOpen, Square, Milestone, Users } from 'lucide-react';
+import { Library, PlusCircle, BarChart2, Settings, User, Play, BookOpen, Square, Milestone, Users, MessageCircle } from 'lucide-react';
 import { cn } from '../../lib/utils/cn';
 import { useSessionManager } from '../../features/session-tracker/useSessionManager';
 import { formatDuration } from '../../lib/utils/format';
@@ -9,11 +9,13 @@ import { getCoverUrl } from '../../lib/api/igdb';
 // import { HardwareWidget } from '../widgets/HardwareWidget'; -- Disabled due to performance lag (v1.0)
 import { useMarkObserver } from '../../features/gamification/hooks/useMarkObserver';
 import logo from '../../../public/images/logo.png';
+import { useDirectMessageUnread } from '../../context/DirectMessageUnreadContext';
 
 export const Sidebar: React.FC = () => {
   const location = useLocation();
   const { activeSession, elapsed, stopTimer } = useSessionManager();
   const { reportSignal } = useMarkObserver();
+  const { totalUnread } = useDirectMessageUnread();
 
   const version = import.meta.env.PACKAGE_VERSION || '1.0.0';
 
@@ -85,6 +87,20 @@ export const Sidebar: React.FC = () => {
           >
             <item.icon size={18} />
             {item.label}
+            {item.to === '/community' && totalUnread > 0 && (
+              <span
+                className={cn(
+                  'ml-auto flex h-5 w-5 items-center justify-center rounded-full border',
+                  checkActive(item.to)
+                    ? 'border-primary-foreground/30 bg-primary-foreground/15 text-primary-foreground'
+                    : 'border-primary/30 bg-primary/10 text-primary',
+                )}
+                title={`${totalUnread} unread ${totalUnread === 1 ? 'message' : 'messages'}`}
+                aria-label={`${totalUnread} unread ${totalUnread === 1 ? 'message' : 'messages'}`}
+              >
+                <MessageCircle size={11} fill="currentColor" />
+              </span>
+            )}
           </Link>
         ))}
       </nav>

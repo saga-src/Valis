@@ -60,7 +60,9 @@ export const useSessionManager = () => {
     const endTime = Date.now();
     const durationSeconds = Math.floor((endTime - currentSession.startTime) / 1000);
 
-    await store.stopTimer();
+    const saved = await store.stopTimer(endTime);
+
+    if (!saved) return;
 
     void (async () => {
         let xpEarned = Math.floor((durationSeconds / 60) * 0.2);

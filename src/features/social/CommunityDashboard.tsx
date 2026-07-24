@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { SocialFeed } from './components/SocialFeed';
 import { LeaderboardsTab } from './components/LeaderboardsTab';
+import { DirectChat } from './components/DirectChat';
 import { useFriendSystem } from './hooks/useFriendSystem';
-import { Users, UserPlus, Fingerprint, Globe, Check, X, UserMinus, Trophy, Share2, ClipboardCheck, Cloud, Loader2, LogIn, Lock, Gamepad2, Clock } from 'lucide-react';
+import { Users, UserPlus, Fingerprint, Globe, Check, X, UserMinus, Trophy, Share2, ClipboardCheck, Cloud, Loader2, LogIn, Lock, Gamepad2, Clock, MessageCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { cn } from '../../lib/utils/cn';
-import { useNavigate } from '../../app/index';
+import { useLocation, useNavigate } from '../../app/index';
 import { AuthWidget } from '../auth/components/AuthWidget';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePresence } from '../../context/PresenceContext';
+import type { ChatFriend } from './types/chat';
+import { useDirectMessageUnread } from '../../context/DirectMessageUnreadContext';
 
 export default function CommunityDashboard() {
   const { user, profile, loading: authLoading } = useAuth();
@@ -27,11 +30,14 @@ export default function CommunityDashboard() {
   
   const { toast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { unreadBySender, markConversationRead } = useDirectMessageUnread();
   const [targetUsername, setTargetUsername] = useState('');
   const [copied, setCopied] = useState(false);
   
   // Tab State - Default based on Auth
-  const [activeView, setActiveView] = useState<'feed' | 'leaderboard'>('leaderboard');
+  const [activeView, setActiveView] = useState<'feed' | 'leaderboard' | 'chat'>('leaderboard');
+  const [selectedFriend, setSelectedFriend] = useState<ChatFriend | null>(null);
   const [hasInitializedDefault, setHasInitializedDefault] = useState(false);
   
   // Auth Modal State for Guests
@@ -53,6 +59,22 @@ export default function CommunityDashboard() {
     }
   }, [user, fetchRequests, fetchFriends]);
 
+  useEffect(() => {
+    if (!user) return;
+
+    const requestedFriendId = new URLSearchParams(location.search).get('chat');
+    if (!requestedFriendId) return;
+
+    const requestedFriend = friends.find(
+      (friend: ChatFriend) => friend.id === requestedFriendId,
+    ) as ChatFriend | undefined;
+    if (!requestedFriend) return;
+
+    setSelectedFriend(requestedFriend);
+    setActiveView('chat');
+    markConversationRead(requestedFriend.id);
+  }, [friends, location.search, markConversationRead, user]);
+
   const copyMyInfo = () => {
     const info = profile?.username || user?.id;
     if (info) {
@@ -72,6 +94,19 @@ export default function CommunityDashboard() {
     if (diff < 0) return 'Just started';
     return diff < 60 ? `${diff}m` : `${Math.floor(diff/60)}h ${diff%60}m`;
   };
+
+  const openChat = (friend: ChatFriend) => {
+    setSelectedFriend(friend);
+    setActiveView('chat');
+    markConversationRead(friend.id);
+    navigate(`/community?chat=${encodeURIComponent(friend.id)}`, {
+      replace: true,
+    });
+  };
+
+  const selectedFriendIsCurrent = Boolean(
+    selectedFriend && friends.some((friend: ChatFriend) => friend.id === selectedFriend.id),
+  );
 
   if (authLoading) {
     return (
@@ -134,14 +169,28 @@ export default function CommunityDashboard() {
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 border-b border-border/50 bg-muted/20 backdrop-blur-md shrink-0">
               <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary border border-primary/20 shadow-inner">
-                      {activeView === 'feed' ? <Globe size={24} /> : <Trophy size={24} />}
+                      {activeView === 'feed' ? (
+                        <Globe size={24} />
+                      ) : activeView === 'chat' ? (
+                        <MessageCircle size={24} />
+                      ) : (
+                        <Trophy size={24} />
+                      )}
                   </div>
                   <div>
                       <h2 className="text-xl font-black tracking-tight leading-none uppercase">
-                          {activeView === 'feed' ? 'The Collective' : 'Elite Operatives'}
+                          {activeView === 'feed'
+                            ? 'The Collective'
+                            : activeView === 'chat'
+                              ? 'Direct Link'
+                              : 'Elite Operatives'}
                       </h2>
                       <p className="text-xs text-muted-foreground mt-1 font-medium">
-                          {activeView === 'feed' ? 'Real-time telemetry from the network' : 'Global performance rankings'}
+                          {activeView === 'feed'
+                            ? 'Real-time telemetry from the network'
+                            : activeView === 'chat'
+                              ? 'Private messages between connected friends'
+                              : 'Global performance rankings'}
                       </p>
                   </div>
               </div>
@@ -186,6 +235,19 @@ export default function CommunityDashboard() {
                       >
                           Feed
                       </button>
+                      {user && (
+                        <button
+                            onClick={() => setActiveView('chat')}
+                            className={cn(
+                                "px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-tighter transition-all",
+                                activeView === 'chat'
+                                    ? "bg-primary text-primary-foreground shadow-md scale-105"
+                                    : "text-muted-foreground hover:text-foreground"
+                            )}
+                        >
+                            Chat
+                        </button>
+                      )}
                       <button 
                           onClick={() => setActiveView('leaderboard')}
                           className={cn(
@@ -216,6 +278,45 @@ export default function CommunityDashboard() {
                       <div className="max-w-xs space-y-2">
                         <h3 className="text-xl font-bold">Activity Feed Locked</h3>
                         <p className="text-sm text-muted-foreground">Sign in to see real-time telemetry and achievements from your friends and the collective.</p>
+                      </div>
+                      <AuthWidget variant="card" className="max-w-sm" />
+                    </div>
+                  )
+              ) : activeView === 'chat' ? (
+                  user ? (
+                    selectedFriend ? (
+                      <DirectChat
+                        userId={user.id}
+                        friend={selectedFriend}
+                        presence={onlineUsers[selectedFriend.id]}
+                        isFriend={selectedFriendIsCurrent}
+                        onOpenProfile={() => navigate(`/profile/${selectedFriend.id}`)}
+                      />
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center p-12 text-center">
+                        <div className="w-16 h-16 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-center text-primary mb-5">
+                          <MessageCircle size={30} />
+                        </div>
+                        <h3 className="text-xl font-black">
+                          {friends.length === 0 ? 'No active links' : 'Choose a friend'}
+                        </h3>
+                        <p className="text-sm text-muted-foreground mt-2 max-w-sm">
+                          {friends.length === 0
+                            ? 'Establish a friend connection before starting a private conversation.'
+                            : 'Use the message action in Active Links to open a private conversation.'}
+                        </p>
+                      </div>
+                    )
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center p-12 text-center space-y-6">
+                      <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center text-muted-foreground opacity-50">
+                        <Lock size={32} />
+                      </div>
+                      <div className="max-w-xs space-y-2">
+                        <h3 className="text-xl font-bold">Private Chat Locked</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Sign in to exchange persistent messages with friends.
+                        </p>
                       </div>
                       <AuthWidget variant="card" className="max-w-sm" />
                     </div>
@@ -292,7 +393,7 @@ export default function CommunityDashboard() {
                   <div className="h-full flex flex-col items-center justify-center text-center p-8 bg-muted/10 rounded-2xl border border-dashed border-border/50 opacity-60">
                     <Lock size={32} className="text-muted-foreground/40 mb-4" />
                     <p className="text-sm font-bold text-muted-foreground">Login Required</p>
-                    <p className="text-[10px] text-muted-foreground/60 mt-1 leading-relaxed">Establish encrypted links with other operatives by joining the Valis network.</p>
+                    <p className="text-[10px] text-muted-foreground/60 mt-1 leading-relaxed">Establish social links with other operatives by joining the Valis network.</p>
                   </div>
                 ) : friends.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center p-8 bg-muted/10 rounded-2xl border border-dashed border-border/50">
@@ -307,11 +408,17 @@ export default function CommunityDashboard() {
                     const presence = onlineUsers[friend.id];
                     const isOnline = !!presence;
                     const isPlaying = presence?.status === 'playing';
+                    const unreadCount = unreadBySender[friend.id] || 0;
 
                     return (
                       <div 
                         key={friend.id} 
-                        className="group flex items-center justify-between p-3 bg-muted/20 border border-transparent rounded-xl hover:border-primary/20 hover:bg-muted/40 transition-all cursor-pointer"
+                        className={cn(
+                          "group flex items-center justify-between p-3 bg-muted/20 border rounded-xl hover:border-primary/20 hover:bg-muted/40 transition-all cursor-pointer",
+                          selectedFriend?.id === friend.id && activeView === 'chat'
+                            ? "border-primary/40 bg-primary/5"
+                            : "border-transparent",
+                        )}
                         onClick={() => navigate(`/profile/${friend.id}`)}
                       >
                         <div className="flex items-center gap-3 overflow-hidden">
@@ -352,17 +459,43 @@ export default function CommunityDashboard() {
                           </div>
                         </div>
                         
-                        <button 
-                          onClick={(e) => {
-                              e.stopPropagation();
-                              if (confirm(`Sever link with ${friend.username}?`)) {
-                                  removeFriend(friend.id);
-                              }
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-2 text-muted-foreground hover:text-red-500 transition-all rounded-lg hover:bg-red-500/10"
-                        >
-                          <UserMinus size={14} />
-                        </button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {unreadCount > 0 && (
+                            <span
+                              className="min-w-5 h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[10px] font-black flex items-center justify-center shadow-sm"
+                              title={`${unreadCount} unread ${unreadCount === 1 ? 'message' : 'messages'}`}
+                              aria-label={`${unreadCount} unread ${unreadCount === 1 ? 'message' : 'messages'} from ${friend.username}`}
+                            >
+                              {unreadCount > 99 ? '99+' : unreadCount}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openChat(friend);
+                            }}
+                            className="p-2 text-primary hover:bg-primary/10 transition-all rounded-lg"
+                            title={`Message ${friend.username}`}
+                            aria-label={`Message ${friend.username}`}
+                          >
+                            <MessageCircle size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Sever link with ${friend.username}?`)) {
+                                    removeFriend(friend.id);
+                                }
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-2 text-muted-foreground hover:text-red-500 transition-all rounded-lg hover:bg-red-500/10 focus:opacity-100"
+                            title={`Remove ${friend.username}`}
+                            aria-label={`Remove ${friend.username}`}
+                          >
+                            <UserMinus size={14} />
+                          </button>
+                        </div>
                       </div>
                     );
                   })

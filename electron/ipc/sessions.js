@@ -13,17 +13,23 @@ export function registerSessionHandlers() {
 
   ipcMain.handle('session:stop', async (event, { sessionId }) => {
     const session = await db.selectFrom('sessions').select('game_id').where('id', '=', sessionId).executeTakeFirst();
-    await dbActions.endSession(sessionId);
+    const finalizedSession = await dbActions.endSession(sessionId);
+    if (!finalizedSession) {
+      return { success: false, error: 'Session not found' };
+    }
     emitDataChange({ type: 'session', source: 'session:stop', gameId: session?.game_id, sessionId, important: true });
-    return { success: true };
+    return { success: true, session: finalizedSession };
   });
 
   // Also handle the legacy channel if main.js logic is being migrated fully here
   ipcMain.handle('session:end', async (event, { sessionId, data }) => {
     const session = await db.selectFrom('sessions').select('game_id').where('id', '=', sessionId).executeTakeFirst();
-    await dbActions.endSession(sessionId, data);
+    const finalizedSession = await dbActions.endSession(sessionId, data);
+    if (!finalizedSession) {
+      return { success: false, error: 'Session not found' };
+    }
     emitDataChange({ type: 'session', source: 'session:end', gameId: session?.game_id, sessionId, important: true });
-    return { success: true };
+    return { success: true, session: finalizedSession };
   });
 
   ipcMain.handle('db:get-sessions', async (event, gameId) => {
