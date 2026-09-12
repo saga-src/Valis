@@ -5,6 +5,7 @@ import { Clock, Activity } from 'lucide-react';
 import { useCircadianData } from '../hooks/useCircadianData';
 import { useTheme } from '../../../lib/theme';
 import { cn } from '../../../lib/utils/cn';
+import { AnalyticsTooltipSurface } from '../components/AnalyticsTooltip';
 
 interface CircadianWidgetProps {
   sessions: any[];
@@ -153,12 +154,12 @@ export const CircadianWidget: React.FC<CircadianWidgetProps> = ({ sessions }) =>
                         if (!val || val <= 0) return null;
 
                         return (
-                            <div className="bg-popover border border-border px-3 py-2 rounded-lg shadow-xl text-xs z-50">
+                            <AnalyticsTooltipSurface className="px-3 py-2">
                                 <p className="font-bold text-foreground mb-1">{d.label}</p>
                                 <p className="text-primary font-mono font-bold">
                                     {metric === 'time' ? `${d.realDuration} hrs` : `${d.realCount} sessions`}
                                 </p>
-                            </div>
+                            </AnalyticsTooltipSurface>
                         );
                     }
                     return null;

@@ -56,7 +56,7 @@ class CloudGate {
       } catch (error) {
         console.error('🔥 [CloudGate] Upstream Request Failed:', error.message);
         if (error.response) {
-            console.error('[CloudGate] Status:', error.response.status, 'Data:', error.response.data);
+            console.error('[CloudGate] Status:', error.response.status);
         }
       }
       this.processQueue();
@@ -106,10 +106,11 @@ class CloudGate {
   /**
    * Fetches Steam achievements via the Cloud Proxy.
    */
-  async fetchSteamAchievements(steamId, appId) {
+  async fetchSteamAchievements(steamId, appId, options = {}) {
     return this.enqueue(async () => {
       console.log(`[CloudGate] Proxying Steam Achievements: User ${steamId}, App ${appId}`);
       const response = await axios.get(`${this.SUPABASE_URL}/functions/v1/valis-proxy/steam/achievements`, {
+        signal: options.signal,
         params: { steamId, appId },
         headers: {
           'Authorization': `Bearer ${this.SUPABASE_ANON_KEY}`,
@@ -123,23 +124,47 @@ class CloudGate {
   /**
    * Fetches Steam achievement definitions (schema) via the Cloud Proxy.
    */
-  async fetchSteamSchema(appId) {
+  async fetchSteamSchema(appId, options = {}) {
     return this.enqueue(async () => {
-      try {
-        console.log(`[CloudGate] Proxying Steam Schema: App ${appId}`);
-        const response = await axios.get(`${this.SUPABASE_URL}/functions/v1/valis-proxy/steam/schema`, {
-          params: { appId },
+      console.log(`[CloudGate] Proxying Steam Schema: App ${appId}`);
+      const response = await axios.get(`${this.SUPABASE_URL}/functions/v1/valis-proxy/steam/schema`, {
+        signal: options.signal,
+        params: { appId },
+        headers: {
+          'Authorization': `Bearer ${this.SUPABASE_ANON_KEY}`,
+          'apikey': this.SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json'
+        }
+      });
+      return response.data?.game?.availableGameStats?.achievements || [];
+    });
+  }
+
+  /**
+   * Exchanges a one-time Blizzard authorization code in the backend and returns
+   * only the minimal account identity. Tokens and the client secret never reach
+   * the Electron client.
+   */
+  async fetchBlizzardIdentity({ code, redirectUri }) {
+    if (!this.SUPABASE_URL || !this.SUPABASE_ANON_KEY) {
+      const error = new Error('Supabase proxy configuration is missing.');
+      error.code = 'BLIZZARD_BACKEND_NOT_CONFIGURED';
+      throw error;
+    }
+    return this.enqueue(async () => {
+      const response = await axios.post(
+        `${this.SUPABASE_URL}/functions/v1/valis-proxy/blizzard/identity`,
+        { code, redirectUri },
+        {
+          timeout: 30_000,
           headers: {
             'Authorization': `Bearer ${this.SUPABASE_ANON_KEY}`,
             'apikey': this.SUPABASE_ANON_KEY,
             'Content-Type': 'application/json'
           }
-        });
-        return response.data?.game?.availableGameStats?.achievements || [];
-      } catch (error) {
-        console.warn(`[CloudGate] Schema fetch failed for ${appId}:`, error.message);
-        return [];
-      }
+        }
+      );
+      return response.data;
     });
   }
 }

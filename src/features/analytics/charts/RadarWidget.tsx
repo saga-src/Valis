@@ -3,6 +3,7 @@ import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Responsi
 import { Radar as RadarIcon, Clock, Hash, Check } from 'lucide-react';
 import { useRadarData } from '../hooks/useRadarData';
 import { cn } from '../../../lib/utils/cn';
+import { analyticsTooltipProps } from '../components/AnalyticsTooltip';
 
 interface RadarWidgetProps {
   library: any[]; // Changed from data to library
@@ -99,15 +100,7 @@ export const RadarWidget: React.FC<RadarWidgetProps> = ({ library }) => {
                 />
                 <PolarRadiusAxis angle={30} domain={[0, 'auto']} tick={false} axisLine={false} />
                 <Tooltip 
-                contentStyle={{ 
-                    backgroundColor: 'var(--card)', 
-                    borderRadius: '8px', 
-                    border: '1px solid var(--border)', 
-                    color: 'var(--foreground)',
-                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                    fontSize: '12px',
-                    fontWeight: 'bold'
-                }}
+                {...analyticsTooltipProps}
                 itemStyle={{ color: color }}
                 cursor={{ stroke: color, strokeWidth: 1, strokeDasharray: '4 4' }}
                 />

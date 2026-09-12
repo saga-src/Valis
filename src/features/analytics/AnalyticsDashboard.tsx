@@ -348,7 +348,7 @@ const DashboardContent = () => {
                 </button>
 
                 {showAddMenu && (
-                  <div className="absolute top-full right-0 mt-2 w-64 bg-popover border border-border rounded-lg shadow-2xl z-[100] p-2 grid gap-1">
+                  <div className="absolute top-full right-0 mt-2 max-h-[min(28rem,70vh)] w-64 overflow-y-auto bg-popover text-popover-foreground border border-border rounded-lg shadow-2xl z-[100] p-2 grid gap-1">
                     <span className="text-[10px] font-bold uppercase text-muted-foreground px-2 py-1">Available Widgets</span>
                     {Object.values(WIDGET_DEFINITIONS).map((def) => (
                       <button

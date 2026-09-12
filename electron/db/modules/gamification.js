@@ -285,17 +285,18 @@ export async function addPlaytimeXP(amount) {
 
 export async function unlockMark(id) {
     try {
-        await db.insertInto('unlocked_marks')
+        const inserted = await db.insertInto('unlocked_marks')
           .values({
               id,
               unlocked_at: new Date().toISOString()
           })
           .onConflict(oc => oc.doNothing())
-          .execute();
-        return true;
+          .returning('id')
+          .executeTakeFirst();
+        return { success: true, newlyUnlocked: Boolean(inserted), markId: String(id) };
     } catch (e) {
         console.error('[DB] Failed to unlock mark:', e);
-        return false;
+        return { success: false, newlyUnlocked: false, markId: String(id), error: e.message };
     }
 }
 

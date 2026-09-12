@@ -4,6 +4,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { TrendingUp } from 'lucide-react';
 import { useBacklogData } from '../hooks/useBacklogData';
 import { useTheme } from '../../../lib/theme';
+import { analyticsTooltipProps } from '../components/AnalyticsTooltip';
 
 interface BurnDownWidgetProps {
   library: any[];
@@ -42,15 +43,7 @@ export const BurnDownWidget: React.FC<BurnDownWidgetProps> = ({ library, session
                 axisLine={false}
                 tickLine={false}
             />
-            <Tooltip 
-                contentStyle={{ 
-                    backgroundColor: 'var(--card)', 
-                    borderColor: 'var(--border)', 
-                    borderRadius: '8px',
-                    color: 'var(--foreground)'
-                }}
-                labelStyle={{ fontWeight: 'bold', marginBottom: '4px', color: 'var(--muted-foreground)' }}
-            />
+            <Tooltip {...analyticsTooltipProps} />
             {/* Acquired (Total Potential) */}
             <Area 
                 type="monotone" 

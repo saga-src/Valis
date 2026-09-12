@@ -15,6 +15,8 @@ import { registerImageHandlers } from './ipc/images.js'; // NEW
 import { registerTagHandlers } from './ipc/tags.js'; // NEW v1.1.0
 import { gameWatcher } from './services/ProcessWatcher.js';
 import { achievementWatcher } from './services/FileWatcherService.js';
+import { steamAutoAchievementSync } from './services/SteamAutoAchievementSyncService.js';
+import { getSetting } from './db/modules/settings.js';
 import { appSessionLog } from './services/AppSessionLogService.js';
 import * as igdb from './lib/igdb.js';
 import fs from 'fs';
@@ -88,9 +90,7 @@ if (!gotTheLock) {
     });
 
     // Preserve your Achievement Watcher
-    if (global.achievementWatcher) {
-        achievementWatcher.init(mainWindow);
-    }
+    achievementWatcher.init(mainWindow);
 
     // ⚡️ NEW UNIFIED LOADING LOGIC
     if (process.env.VITE_DEV_SERVER_URL) {
@@ -170,6 +170,8 @@ if (!gotTheLock) {
       }
       return true;
     });
+
+    ipcMain.handle('watcher:get-health', async () => gameWatcher.getHealth());
 
     ipcMain.handle('app:proxy-image', async (_, url) => {
       if (!url) return null;
@@ -289,7 +291,10 @@ if (!gotTheLock) {
     registerTagHandlers(); // v1.1.0
     registerLegacyHandlers();
 
-    gameWatcher.start(mainWindow, 5000);
+    const trackerEnabled = (await getSetting('auto_tracking_enabled')) !== false;
+    const trackerInterval = await getSetting('auto_tracking_interval');
+    if (trackerEnabled) gameWatcher.start(mainWindow, trackerInterval || 5000);
+    await steamAutoAchievementSync.init(mainWindow);
 
     // Initial check
     autoUpdater.checkForUpdates();
@@ -304,6 +309,9 @@ if (!gotTheLock) {
   });
 
   app.on('will-quit', () => {
+    steamAutoAchievementSync.stop();
+    achievementWatcher.close();
+    gameWatcher.stop();
     appSessionLog.end('app closed');
   });
 

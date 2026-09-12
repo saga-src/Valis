@@ -129,6 +129,8 @@ contextBridge.exposeInMainWorld('api', {
   // Auth
   authSteam: () => ipcRenderer.invoke('auth:steam'),
   authEpic: () => ipcRenderer.invoke('auth:epic'),
+  authBlizzard: () => ipcRenderer.invoke('auth:blizzard'),
+  cancelBlizzardAuth: () => ipcRenderer.invoke('auth:blizzard-cancel'),
   authPsn: (npsso) => ipcRenderer.invoke('auth:psn', npsso),
   authXbox: () => ipcRenderer.invoke('auth:xbox'),
   getSteamUser: () => ipcRenderer.invoke('auth:get-steam-user'),
@@ -142,6 +144,11 @@ contextBridge.exposeInMainWorld('api', {
     const subscription = (_, data) => callback(data);
     ipcRenderer.on('steam:sync-progress', subscription);
     return () => ipcRenderer.removeListener('steam:sync-progress', subscription);
+  },
+  onEpicSyncProgress: (callback) => {
+    const subscription = (_, data) => callback(data);
+    ipcRenderer.on('epic:sync-progress', subscription);
+    return () => ipcRenderer.removeListener('epic:sync-progress', subscription);
   },
   onSocialBroadcastSync: (callback) => {
     const subscription = (_, data) => callback(data);
@@ -182,6 +189,7 @@ contextBridge.exposeInMainWorld('api', {
   openFileDialog: () => ipcRenderer.invoke('dialog:open-file'),
   selectExecutable: () => ipcRenderer.invoke('dialog:open-file'), // Keep alias for compat
   updateWatcherSettings: (settings) => ipcRenderer.invoke('watcher:update-settings', settings),
+  getWatcherHealth: () => ipcRenderer.invoke('watcher:get-health'),
 
   // Watcher Events
   onSessionStarted: (callback) => {

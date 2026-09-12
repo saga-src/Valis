@@ -1,183 +1,170 @@
-
+import { randomUUID } from 'node:crypto';
 import { BrowserWindow } from 'electron';
 import epicClient from './EpicClient.js';
-import { addGame, getLibrary, getGameById } from '../../db/modules/games.js';
-import { updateAchievementStatusByName } from '../../db/modules/achievements.js';
+import { addGame, getGameById } from '../../db/modules/games.js';
+import { getAchievements, updateAchievementStatusByName } from '../../db/modules/achievements.js';
 import { resolveIgdbGameByEpicSlug, fetchIGDBMetadata, searchIGDB } from '../../lib/igdb.js';
 import { getLinkedAccounts } from '../../db/modules/settings.js';
+import {
+  EPIC_PROGRESS_CHANNEL,
+  epicSyncResult,
+  matchEpicAchievement,
+  mergeEpicOwnership,
+  mergeEpicPlaytime,
+  parseEpicDate
+} from './EpicSyncUtils.js';
 
-// Helper to clean titles for better search results
+let activeSyncPromise = null;
+
 function sanitizeTitle(title) {
-    if (!title) return '';
-    return title
-        .replace(/®|™/g, '')       // Remove trademark symbols
-        .replace(/Game of the Year Edition|GOTY/i, '') // Remove editions that confuse search
-        .replace(/\s+/g, ' ')      // Collapse multiple spaces
-        .trim();
+  return String(title || '')
+    .replace(/®|™/g, '')
+    .replace(/Game of the Year Edition|GOTY/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-// --- Date Parser (English) ---
-function parseEpicDate(dateStr) {
-    if (!dateStr) return new Date().toISOString();
-    
-    // Input format: "Unlocked Apr 20, 2023"
-    const clean = dateStr.replace('Unlocked ', '').trim();
-    
-    // Native Date() works perfectly with English formats like "Apr 20, 2023"
-    const dateObj = new Date(clean);
-    
-    if (!isNaN(dateObj.getTime())) {
-        return dateObj.toISOString();
-    }
-    
-    return new Date().toISOString(); // Fallback
+function sendProgress(sender, data) {
+  if (sender && !sender.isDestroyed?.()) sender.send(EPIC_PROGRESS_CHANNEL, data);
 }
 
-export async function syncEpicLibrary(sender) {
-  const window = BrowserWindow.fromWebContents(sender);
-  sender.send('steam:sync-progress', { message: 'Initializing Visual Scraper...', current: 0, total: 0 });
-
-  // 1. Get the Linked Account ID
-  const accounts = await getLinkedAccounts('epic');
-  const accountId = accounts.length > 0 ? accounts[accounts.length - 1].external_id : null;
-
-  if (!accountId) {
-      return { success: false, error: 'No linked Epic account found. Please connect via Settings.' };
-  }
-
-  let scrapedGames = [];
+async function resolveGameId(item) {
+  let igdbId = null;
   try {
-      // 2. Call the Client to scrape with progress sender
-      scrapedGames = await epicClient.fetchLibrary(window, accountId, sender);
-  } catch (e) {
-      console.error('[EpicSync] Client error:', e);
-      return { success: false, error: 'Scraping process failed.' };
+    igdbId = await resolveIgdbGameByEpicSlug(item.id);
+  } catch {}
+
+  if (!igdbId) {
+    const searchResults = await searchIGDB(sanitizeTitle(item.title));
+    if (searchResults?.length === 1) igdbId = searchResults[0].id;
+  }
+  return igdbId ? String(igdbId) : `epic-${item.id}`;
+}
+
+async function reconcileEpicGame(item, result) {
+  const resolvedId = await resolveGameId(item);
+  const existingGame = await getGameById(resolvedId);
+  const epicSeconds = Math.max(0, Number(item.playtime_forever) || 0) * 60;
+  const common = {
+    id: resolvedId,
+    epic_id: item.id,
+    legacy_playtime_seconds: mergeEpicPlaytime(existingGame?.legacy_playtime_seconds, epicSeconds),
+    platform_ownership: mergeEpicOwnership(existingGame?.platform_ownership),
+    skip_achievement_scan: true
+  };
+
+  if (existingGame) {
+    await addGame({ ...existingGame, ...common });
+    result.updated += 1;
+  } else {
+    let metadata = null;
+    if (/^\d+$/.test(resolvedId)) metadata = await fetchIGDBMetadata(resolvedId);
+    await addGame({ ...metadata, ...common, name: metadata?.name || item.title });
+    result.added += 1;
   }
 
-  if (scrapedGames.length === 0) {
-      return { success: true, added: 0, message: 'No games found or empty list.' };
-  }
-
-  const totalGames = scrapedGames.length;
-  let totalAdded = 0;
-  let totalSyncedAchievements = 0;
-
-  for (let i = 0; i < totalGames; i++) {
-      const item = scrapedGames[i];
-      const cleanTitle = sanitizeTitle(item.title);
-      const epicSlug = item.id;
-      
-      // Update DB Progress (90% -> 100%)
-      const dbPercent = 90 + Math.round((i / totalGames) * 10);
-      sender.send('steam:sync-progress', { 
-          message: `Importing to Vault: ${cleanTitle}`, 
-          current: i + 1, 
-          total: totalGames,
-          percent: dbPercent
+  const definitions = await getAchievements(resolvedId);
+  for (const sourceAchievement of item.unlockedAchievements || []) {
+    const match = matchEpicAchievement(sourceAchievement.name, definitions);
+    if (match.kind === 'ambiguous' || match.kind === 'not_found') {
+      result.skipped += 1;
+      result.failures.push({
+        sourceId: item.id,
+        title: item.title,
+        code: match.kind === 'ambiguous' ? 'EPIC_ACHIEVEMENT_AMBIGUOUS' : 'EPIC_ACHIEVEMENT_NOT_FOUND',
+        message: `Achievement could not be matched safely: ${sourceAchievement.name}`
       });
+      continue;
+    }
 
-      // 1. Resolve IGDB ID First
-      let igdbId = null;
-      try {
-          igdbId = await resolveIgdbGameByEpicSlug(epicSlug);
-      } catch (e) {
-          console.warn('[EpicSync] Slug lookup warning:', e);
-      }
+    const unlockedAt = parseEpicDate(sourceAchievement.rawDate);
+    if (!unlockedAt) {
+      result.skipped += 1;
+      result.failures.push({
+        sourceId: item.id,
+        title: item.title,
+        code: 'EPIC_ACHIEVEMENT_DATE_INVALID',
+        message: `Unlock date was invalid for: ${sourceAchievement.name}`
+      });
+      continue;
+    }
 
-      if (!igdbId) {
-          const searchResults = await searchIGDB(cleanTitle);
-          if (searchResults && searchResults.length > 0) {
-              igdbId = searchResults[0].id;
-          }
-      }
+    if (match.achievement.unlockedAt) continue;
+    const updated = await updateAchievementStatusByName(resolvedId, match.achievement.name, unlockedAt);
+    if (updated) result.achievementsUnlocked += 1;
+  }
+}
 
-      const resolvedId = igdbId ? String(igdbId) : `epic-${epicSlug}`;
+async function runEpicSync(sender) {
+  const correlationId = randomUUID();
+  const result = epicSyncResult();
+  sendProgress(sender, { message: 'Starting Epic sync...', percent: 0, correlationId });
 
-      // 2. Fetch Existing Game by universal ID
-      const existingGame = await getGameById(resolvedId);
-
-      // 3. Calculate Smart Playtime
-      let legacyEntries = [];
-      const epicSeconds = (item.playtime_forever || 0) * 60;
-
-      if (existingGame) {
-        legacyEntries = existingGame.legacy_playtime_seconds || [];
-        const hasEpicSource = legacyEntries.some(e => 
-          e.source?.toLowerCase().trim() === 'epic'
-        );
-
-        if (!hasEpicSource && epicSeconds > 0) {
-          legacyEntries.push({ source: 'Epic', platform_id: 99002, seconds: epicSeconds });
-          console.log(`[EpicSync] Aggregating Epic time for: ${item.title}`);
-        }
-      } else {
-        legacyEntries = epicSeconds > 0 ? [{ source: 'Epic', platform_id: 99002, seconds: epicSeconds }] : [];
-      }
-
-      // 4. Upsert Logic using addGame
-      let activeGameId = resolvedId;
-      
-      if (!existingGame) {
-          console.log(`[EpicSync] Importing new game: ${item.title} (${epicSlug})`);
-          
-          if (igdbId) {
-              const metadata = await fetchIGDBMetadata(igdbId);
-              if (metadata) {
-                  await addGame({
-                      ...metadata,
-                      id: String(igdbId),
-                      epic_id: epicSlug,
-                      legacy_playtime_seconds: legacyEntries,
-                      platform_ownership: [{ id: 99002, price: 0 }],
-                      skip_achievement_scan: true
-                  });
-              } else {
-                  await addGame({
-                      id: String(igdbId),
-                      name: item.title,
-                      epic_id: epicSlug,
-                      legacy_playtime_seconds: legacyEntries,
-                      platform_ownership: [{ id: 99002, price: 0 }],
-                      skip_achievement_scan: true
-                  });
-              }
-          } else {
-              await addGame({
-                  id: resolvedId,
-                  name: item.title,
-                  epic_id: epicSlug,
-                  legacy_playtime_seconds: legacyEntries,
-                  platform_ownership: [{ id: 99002, price: 0 }],
-                  skip_achievement_scan: true
-              });
-          }
-          totalAdded++;
-      } else {
-          await addGame({
-            ...existingGame,
-            legacy_playtime_seconds: legacyEntries,
-            epic_id: epicSlug,
-            skip_achievement_scan: true
-          });
-      }
-
-      // 5. Update Achievements
-      if (activeGameId && item.unlockedAchievements && item.unlockedAchievements.length > 0) {
-          console.log(`   -> Syncing ${item.unlockedAchievements.length} achievements for ${activeGameId}...`);
-          for (const ach of item.unlockedAchievements) {
-              const unlockDate = parseEpicDate(ach.rawDate);
-              const success = await updateAchievementStatusByName(activeGameId, ach.name, unlockDate);
-              if (success) totalSyncedAchievements++;
-          }
-      }
-      
-      // Throttle to be polite to IGDB
-      await new Promise(r => setTimeout(r, 400));
+  const accounts = await getLinkedAccounts('epic');
+  const accountId = accounts.at(-1)?.external_id;
+  if (!accountId) {
+    return epicSyncResult({
+      status: 'error',
+      failures: [{ code: 'EPIC_ACCOUNT_NOT_LINKED', message: 'No linked Epic account was found.' }]
+    });
   }
 
-  // 6. BATCH SOCIAL SIGNAL
-  sender.send('SOCIAL_BROADCAST_SYNC', { platform: 'Epic Games', added: totalAdded, achievements: totalSyncedAchievements });
+  const mainWindow = BrowserWindow.fromWebContents(sender);
+  const clientResult = await epicClient.fetchLibrary(mainWindow, accountId, sender);
+  result.status = clientResult.status;
+  result.discovered = clientResult.discovered || 0;
+  result.processed = clientResult.processed || 0;
+  result.failures.push(...(clientResult.failures || []));
 
-  sender.send('steam:sync-progress', { message: 'Sync Complete!', percent: 100 });
-  return { success: true, added: totalAdded, synced: totalSyncedAchievements };
+  if (clientResult.status === 'empty') {
+    sendProgress(sender, { message: 'Epic library is empty.', percent: 100, correlationId });
+    return { ...result, success: true };
+  }
+  if (!['complete', 'partial'].includes(clientResult.status)) return result;
+
+  const games = clientResult.games || [];
+  for (let index = 0; index < games.length; index += 1) {
+    const item = games[index];
+    sendProgress(sender, {
+      message: `Importing ${index + 1} of ${games.length}: ${sanitizeTitle(item.title)}`,
+      current: index + 1,
+      total: games.length,
+      percent: 85 + Math.round(((index + 1) / Math.max(games.length, 1)) * 14),
+      correlationId,
+      stage: 'reconcile'
+    });
+    try {
+      await reconcileEpicGame(item, result);
+    } catch (error) {
+      result.skipped += 1;
+      result.failures.push({
+        sourceId: item.id,
+        title: item.title,
+        code: error.code || 'EPIC_GAME_RECONCILE_FAILED',
+        message: error.message
+      });
+    }
+  }
+
+  result.processed = games.length;
+  result.status = result.failures.length ? 'partial' : 'complete';
+  result.success = true;
+  sendProgress(sender, { message: 'Epic sync complete.', percent: 100, correlationId });
+  if (result.added > 0 || result.achievementsUnlocked > 0) {
+    sender.send('SOCIAL_BROADCAST_SYNC', {
+      platform: 'Epic Games',
+      added: result.added,
+      achievements: result.achievementsUnlocked
+    });
+  }
+  console.info(`[EpicSync:${correlationId}] status=${result.status} discovered=${result.discovered} processed=${result.processed} failures=${result.failures.length}`);
+  return result;
+}
+
+export function syncEpicLibrary(sender) {
+  if (activeSyncPromise) return activeSyncPromise;
+  activeSyncPromise = runEpicSync(sender).finally(() => {
+    activeSyncPromise = null;
+  });
+  return activeSyncPromise;
 }

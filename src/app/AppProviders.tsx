@@ -56,14 +56,23 @@ const AppBackgroundServices: React.FC = () => {
   const { updateProgress, setSyncing } = useSyncStore();
   
   useEffect(() => {
-    if (window.api && window.api.onSteamSyncProgress) {
-        const removeListener = window.api.onSteamSyncProgress((data: any) => {
-            setSyncing(true);
-            updateProgress(data.message, data.current || 0, data.total || 0);
-        });
-        return () => removeListener();
-    }
-  }, []);
+    if (!window.api) return;
+    const handleProgress = (data: any) => {
+      setSyncing(true);
+      const hasCount = Number(data.total) > 0;
+      updateProgress(
+        data.message,
+        hasCount ? Number(data.current || 0) : Number(data.percent || 0),
+        hasCount ? Number(data.total) : 100
+      );
+    };
+    const removeSteam = window.api.onSteamSyncProgress?.(handleProgress);
+    const removeEpic = window.api.onEpicSyncProgress?.(handleProgress);
+    return () => {
+      removeSteam?.();
+      removeEpic?.();
+    };
+  }, [setSyncing, updateProgress]);
 
   // ⚡ SOCIAL SYNC LISTENER
   useEffect(() => {

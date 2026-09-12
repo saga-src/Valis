@@ -39,6 +39,44 @@ export interface GameAchievementRefreshResult {
   error?: string;
 }
 
+export interface GameLaunchResult {
+  success: boolean;
+  status: 'started' | 'busy' | 'invalid' | 'timeout' | 'error';
+  gameId?: string;
+  pid?: number;
+  executable?: string;
+  startedAt?: number;
+  error?: string;
+}
+
+export interface EpicSyncFailure {
+  sourceId?: string;
+  title?: string;
+  code: string;
+  message: string;
+}
+
+export interface EpicSyncResult {
+  success: boolean;
+  status: 'complete' | 'partial' | 'empty' | 'private' | 'cancelled' | 'timeout' | 'error';
+  discovered: number;
+  processed: number;
+  added: number;
+  updated: number;
+  achievementsUnlocked: number;
+  skipped: number;
+  failures: EpicSyncFailure[];
+}
+
+export interface LibrarySyncProgress {
+  message: string;
+  current?: number;
+  total?: number;
+  percent?: number;
+  stage?: string;
+  correlationId?: string;
+}
+
 export interface StorageApi {
   saveGame: (game: any) => Promise<any>;
   addGame: (game: any) => Promise<any>;
@@ -72,6 +110,7 @@ export interface StorageApi {
   openFileDialog: () => Promise<string | null>;
   selectExecutable: () => Promise<string | null>;
   updateWatcherSettings: (settings: { enabled: boolean; interval: number }) => Promise<boolean>;
+  getWatcherHealth: () => Promise<{ enabled: boolean; interval: number; loopsActive: number; scans: number; failures: number; overlapsPrevented: number; targetQueries: number; averageMs: number; p95Ms: number }>;
   onSessionStarted: (callback: (data: { gameId: string; startTime: number; sessionId?: string }) => void) => () => void;
   onSessionEnded: (callback: (data: { gameId: string; duration: number }) => void) => () => void;
   startSession: (gameId: string, startTime: number) => Promise<{ success: boolean; sessionId?: string; error?: string }>;
@@ -103,7 +142,7 @@ export interface StorageApi {
 
   // Gamification
   getGamificationStatus: () => Promise<{ metrics: Record<string, number>; totalXP: number; unlockedTiers: string[]; unlockedMarks: string[]; tree: any[] }>;
-  unlockMark: (markId: string) => Promise<boolean>;
+  unlockMark: (markId: string) => Promise<{ success: boolean; newlyUnlocked: boolean; markId: string; error?: string }>;
   onMilestoneUnlocked: (callback: (data: any) => void) => () => void;
   addPlaytimeXP: (amount: number) => Promise<number>;
   getSyncStats: () => Promise<any>;
@@ -139,21 +178,24 @@ export interface StorageApi {
   // Auth
   authSteam: () => Promise<{ success: boolean; steamId?: string; message?: string }>;
   authEpic: () => Promise<{ success: boolean; message?: string }>;
+  authBlizzard: () => Promise<{ success: boolean; status: string; code?: string; message?: string; account?: { externalId: string; username: string } }>;
+  cancelBlizzardAuth: () => Promise<{ success: boolean; status: string; code?: string }>;
   authPsn: (npsso) => Promise<{ success: boolean; message?: string }>;
   authXbox: () => Promise<{ success: boolean; username?: string; error?: string }>;
   getSteamUser: () => Promise<{ steamId?: string }>;
   syncSteamLibrary: () => Promise<{ success: boolean; added?: number; synced?: number; error?: string }>;
-  syncEpicLibrary: () => Promise<{ success: boolean; added?: number; synced?: number; error?: string }>;
+  syncEpicLibrary: () => Promise<EpicSyncResult>;
   syncPsnLibrary: () => Promise<{ success: boolean; added?: number; synced?: number; error?: string }>;
   syncXboxLibrary: () => Promise<{ success: boolean; added?: number; synced?: number; error?: string }>;
-  onSteamSyncProgress: (callback: (data: { message: string }) => void) => () => void;
+  onSteamSyncProgress: (callback: (data: LibrarySyncProgress) => void) => () => void;
+  onEpicSyncProgress: (callback: (data: LibrarySyncProgress) => void) => () => void;
   onSocialBroadcastSync: (callback: (data: { platform: string; added?: number; achievements?: number }) => void) => () => void;
   // Fix: Add openSteamApiKeyPage to StorageApi interface in types/electron.d.ts
   openSteamApiKeyPage: () => Promise<{ success: boolean }>;
   openExplorer: (filePath: string) => Promise<{ success: boolean; error?: string }>;
 
   // Launcher
-  launchGame: (gameId: string) => Promise<{ success: boolean; error?: string }>;
+  launchGame: (gameId: string) => Promise<GameLaunchResult>;
 
   // Updater
   checkForUpdates: () => Promise<any>;

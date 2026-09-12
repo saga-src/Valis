@@ -48,14 +48,12 @@ export const useMarkObserver = () => {
       const isUnlocked = rule.check(payload, contextState);
 
       if (isUnlocked) {
-        unlockMark(rule.markId);
-        
-        const badge = GENERAL_MARKS.find(m => m.id === rule.markId);
-        if (badge) {
-            // Dispatch Custom Event for the Notifier to handle visual/audio
-            const event = new CustomEvent('unlock_protocol', { detail: badge });
-            window.dispatchEvent(event);
-        }
+        void (async () => {
+          const newlyUnlocked = await unlockMark(rule.markId);
+          if (!newlyUnlocked) return;
+          const badge = GENERAL_MARKS.find(m => m.id === rule.markId);
+          if (badge) window.dispatchEvent(new CustomEvent('unlock_protocol', { detail: badge }));
+        })();
       }
     });
 

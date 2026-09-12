@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/images/logo.png" alt="Valis Logo" width="120" height="120" />
   <h1>VALIS</h1>
-  <p><strong>v1.2.0 | Digital Game Journal</strong></p>
+  <p><strong>v1.3.0 | Digital Game Journal</strong></p>
   
   <p>
     <a href="#features">Features</a> •
@@ -52,9 +52,10 @@ Valis tracks *how* you play, not just *if* you play.
 * **Genre DNA:** Multi-dimensional radar mapping of your library's personality.
 
 ### 4. Integration Ecosystem
-* **Steam Sync:** Imports full libraries and achievements.
+* **Steam Sync:** Imports full libraries and achievements, with an optional session-aware automatic sync that only updates Valis and never modifies Steam.
 * **PlayStation Network:** NPSSO token exchange for Trophies and history.
 * **Epic Games Store:** Visual scraper to bypass API limitations.
+* **Battle.net / Blizzard:** Securely links your BattleTag identity through OAuth. Game-library sync is not claimed or enabled.
 * **Emulator Watcher:** File monitor for Goldberg/CODEX emulator files to sync "unofficial" achievements.
 
 ### 5. Gamification (Valis Protocol)

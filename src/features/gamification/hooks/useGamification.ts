@@ -9,6 +9,8 @@ import { useCacheStore } from '../../../store/cacheStore';
 import { cacheKeys } from '../../../lib/cache/cacheKeys';
 import { cachePolicies } from '../../../lib/cache/cachePolicy';
 
+const pendingMarkUnlocks = new Map<string, Promise<boolean>>();
+
 interface GamificationState {
   level: number;
   currentXP: number;
@@ -79,32 +81,32 @@ export const useGamification = () => {
   }, []);
 
   const unlockMark = useCallback(async (markId: string) => {
-    // Avoid spamming if already unlocked
-    if (state.unlockedMarks.includes(markId)) return;
+    if (state.unlockedMarks.includes(markId)) return false;
+    const pending = pendingMarkUnlocks.get(markId);
+    if (pending) return pending.then(() => false);
 
-    // Optimistic Update
-    setState(prev => ({
-        ...prev,
-        unlockedMarks: [...prev.unlockedMarks, markId]
-    }));
-
-    try {
-        if (window.api && window.api.unlockMark) {
-            await window.api.unlockMark(markId);
-            System.log(`[Gamification] Mark unlocked: ${markId}`);
-            useCacheStore.getState().invalidate(cacheKeys.gamificationStatus);
-            
-            // Sync to Cloud
-            if (user) {
-                PlayerStatsService.unlockArtifact(user.id, markId).catch(console.error);
-            }
-
-            // Refresh to ensure sync
-            refresh();
-        }
-    } catch (e) {
+    const task = (async () => {
+      try {
+        if (!window.api?.unlockMark) return false;
+        const result = await window.api.unlockMark(markId);
+        if (!result.success || !result.newlyUnlocked) return false;
+        setState(prev => prev.unlockedMarks.includes(markId) ? prev : ({
+          ...prev, unlockedMarks: [...prev.unlockedMarks, markId]
+        }));
+        System.log(`[Gamification] Mark unlocked: ${markId}`);
+        useCacheStore.getState().invalidate(cacheKeys.gamificationStatus);
+        if (user) await PlayerStatsService.unlockArtifact(user.id, markId).catch(console.error);
+        await refresh();
+        return true;
+      } catch (e) {
         console.error("Failed to unlock mark:", e);
-    }
+        return false;
+      } finally {
+        pendingMarkUnlocks.delete(markId);
+      }
+    })();
+    pendingMarkUnlocks.set(markId, task);
+    return task;
   }, [refresh, user, state.unlockedMarks]);
 
   useEffect(() => {

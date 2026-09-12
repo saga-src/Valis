@@ -54,8 +54,10 @@ export async function refreshSteamAchievements(gameId, steamId) {
 export async function saveAchievementsToDb(gameId, achievements, options = {}) {
     const gId = String(gameId);
     const mode = options.mode || 'full';
+    const definitionsComplete = options.definitionsComplete !== false;
+    const associateSessions = options.associateSessions === true;
     let remoteUnlockedCount = 0;
-    let newlyUnlocked = 0;
+    const newlyUnlockedIds = [];
     let definitionsUpdated = 0;
     let repairedUnlockFlags = 0;
     let lockedOrphanUnlocks = 0;
@@ -64,7 +66,7 @@ export async function saveAchievementsToDb(gameId, achievements, options = {}) {
         for (const ach of achievements) {
             const achievementId = String(ach.id);
             const existingProgress = await trx.selectFrom('achievement_progress')
-                .select(['unlocked_at'])
+                .select(['unlocked_at', 'session_id'])
                 .where('game_id', '=', gId)
                 .where('achievement_id', '=', achievementId)
                 .executeTakeFirst();
@@ -77,7 +79,7 @@ export async function saveAchievementsToDb(gameId, achievements, options = {}) {
                 : hasProgressUnlock || remoteUnlockedWithProgress;
 
             if (remoteUnlocked) remoteUnlockedCount++;
-            if (remoteUnlockedWithProgress && !hasProgressUnlock) newlyUnlocked++;
+            if (remoteUnlockedWithProgress && !hasProgressUnlock) newlyUnlockedIds.push(achievementId);
 
             await trx.insertInto('achievements')
                 .values({
@@ -103,18 +105,23 @@ export async function saveAchievementsToDb(gameId, achievements, options = {}) {
             definitionsUpdated++;
 
             if (mode !== 'definitionsOnly' && remoteUnlockedWithProgress) {
+                let sessionId = existingProgress?.session_id || null;
+                if (!sessionId && associateSessions) {
+                    sessionId = await findUniqueSessionForTimestamp(trx, gId, ach.unlocked_at);
+                }
+
                 if (!existingProgress) {
                     await trx.insertInto('achievement_progress')
                         .values({
                             game_id: gId,
                             achievement_id: achievementId,
                             unlocked_at: ach.unlocked_at,
-                            session_id: null
+                            session_id: sessionId
                         })
                         .execute();
                 } else if (!existingProgress.unlocked_at) {
                     await trx.updateTable('achievement_progress')
-                        .set({ unlocked_at: ach.unlocked_at })
+                        .set({ unlocked_at: ach.unlocked_at, session_id: sessionId })
                         .where('game_id', '=', gId)
                         .where('achievement_id', '=', achievementId)
                         .execute();
@@ -130,18 +137,40 @@ export async function saveAchievementsToDb(gameId, achievements, options = {}) {
     }
 
     // 3. Automation: Check for 100% completion
-    const promotedToCompleted = await checkGameCompletion(gId);
+    const promotedToCompleted = definitionsComplete
+        ? await checkGameCompletion(gId)
+        : false;
 
     return {
         total: achievements.length,
         unlocked: remoteUnlockedCount,
-        newlyUnlocked,
+        newlyUnlocked: newlyUnlockedIds.length,
+        newlyUnlockedIds,
         definitionsUpdated,
         repairedUnlockFlags,
         lockedOrphanUnlocks,
         promotedToCompleted,
         mode
     };
+}
+
+async function findUniqueSessionForTimestamp(trx, gameId, isoDateString) {
+    const unlockTime = Date.parse(isoDateString);
+    if (!Number.isFinite(unlockTime)) return null;
+
+    const matches = await trx.selectFrom('sessions')
+        .select('id')
+        .where('game_id', '=', String(gameId))
+        .where('start_time', '<=', unlockTime)
+        .where((eb) => eb.or([
+            eb('end_time', '>=', unlockTime),
+            eb('end_time', '=', 0),
+            eb('end_time', 'is', null)
+        ]))
+        .limit(2)
+        .execute();
+
+    return matches.length === 1 ? matches[0].id : null;
 }
 
 export async function getAchievements(gameId) {
@@ -237,26 +266,41 @@ export async function saveAchievementProgress(gameId, achievementId, { unlocked_
     return false;
   }
 
-  await db.insertInto('achievement_progress')
-    .values({
-      game_id: String(gameId),
-      achievement_id: String(achievementId),
-      unlocked_at,
-      session_id
-    })
-    .onConflict(oc => oc
-      .columns(['game_id', 'achievement_id'])
-      .doUpdateSet({ unlocked_at, session_id })
-    )
-    .execute();
+  const gId = String(gameId);
+  const aId = String(achievementId);
+  let newlyUnlocked = false;
 
-  await db.updateTable('achievements')
-    .set({ unlocked: 1 })
-    .where('game_id', '=', String(gameId))
-    .where('id', '=', String(achievementId))
-    .execute();
+  await db.transaction().execute(async (trx) => {
+    const existing = await trx.selectFrom('achievement_progress')
+      .select(['unlocked_at', 'session_id'])
+      .where('game_id', '=', gId)
+      .where('achievement_id', '=', aId)
+      .executeTakeFirst();
 
-  return true;
+    newlyUnlocked = !existing?.unlocked_at;
+    if (!existing) {
+      await trx.insertInto('achievement_progress').values({
+        game_id: gId,
+        achievement_id: aId,
+        unlocked_at,
+        session_id: session_id || null
+      }).execute();
+    } else if (!existing.unlocked_at) {
+      await trx.updateTable('achievement_progress')
+        .set({ unlocked_at, session_id: existing.session_id || session_id || null })
+        .where('game_id', '=', gId)
+        .where('achievement_id', '=', aId)
+        .execute();
+    }
+
+    await trx.updateTable('achievements')
+      .set({ unlocked: 1 })
+      .where('game_id', '=', gId)
+      .where('id', '=', aId)
+      .execute();
+  });
+
+  return newlyUnlocked;
 }
 
 export async function repairAchievementUnlockFlags(gameId) {

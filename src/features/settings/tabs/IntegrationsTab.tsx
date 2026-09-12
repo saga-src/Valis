@@ -45,12 +45,15 @@ export const IntegrationsTab = () => {
   const [showPsnHelp, setShowPsnHelp] = useState(false);
   const [apiKeys, setApiKeys] = useState({ igdb_client_id: '', igdb_secret: '', steam_api_key: '', psn_npsso: '' });
   const [steamAccounts, setSteamAccounts] = useState<any[]>([]);
+  const [steamAutoAchievements, setSteamAutoAchievements] = useState(false);
   const [epicAccounts, setEpicAccounts] = useState<any[]>([]);
+  const [blizzardAccounts, setBlizzardAccounts] = useState<any[]>([]);
   const [psnAccounts, setPsnAccounts] = useState<any[]>([]);
   const [xboxAccounts, setXboxAccounts] = useState<any[]>([]);
   
   // Loading States
   const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [blizzardAuthPending, setBlizzardAuthPending] = useState(false);
 
   // Modal State
   const [syncConfirmPlatform, setSyncConfirmPlatform] = useState<'steam' | 'epic' | 'psn' | 'xbox' | null>(null);
@@ -59,14 +62,16 @@ export const IntegrationsTab = () => {
   useEffect(() => {
     const loadData = async () => {
       if (window.api) {
-        const [id, secret, steamKey, steamAccs, epicAccs, psnAccs, xboxAccs] = await Promise.all([
+        const [id, secret, steamKey, steamAccs, epicAccs, blizzardAccs, psnAccs, xboxAccs, autoAchievements] = await Promise.all([
           window.api.getSetting('igdb_client_id'),
           window.api.getSetting('igdb_secret'),
           window.api.getSetting('steam_api_key'),
           window.api.getLinkedAccounts('steam'),
           window.api.getLinkedAccounts('epic'),
+          window.api.getLinkedAccounts('blizzard'),
           window.api.getLinkedAccounts('psn'),
-          window.api.getLinkedAccounts('xbox')
+          window.api.getLinkedAccounts('xbox'),
+          window.api.getSetting('steam_auto_achievement_sync_enabled')
         ]);
         setApiKeys({
           igdb_client_id: id || '',
@@ -76,8 +81,10 @@ export const IntegrationsTab = () => {
         });
         setSteamAccounts(steamAccs || []);
         setEpicAccounts(epicAccs || []);
+        setBlizzardAccounts(blizzardAccs || []);
         setPsnAccounts(psnAccs || []);
         setXboxAccounts(xboxAccs || []);
+        setSteamAutoAchievements(autoAchievements === true);
       }
     };
     loadData();
@@ -88,11 +95,12 @@ export const IntegrationsTab = () => {
     const activeSources = [];
     if (steamAccounts.length > 0) activeSources.push('steam');
     if (epicAccounts.length > 0) activeSources.push('epic');
+    if (blizzardAccounts.length > 0) activeSources.push('blizzard');
     if (psnAccounts.length > 0) activeSources.push('psn');
     if (xboxAccounts.length > 0) activeSources.push('xbox');
     
     reportSignal('SOURCE_UPDATE', activeSources);
-  }, [steamAccounts, epicAccounts, psnAccounts, xboxAccounts, reportSignal]);
+  }, [steamAccounts, epicAccounts, blizzardAccounts, psnAccounts, xboxAccounts, reportSignal]);
 
   const handleSave = async () => {
     try {
@@ -107,6 +115,17 @@ export const IntegrationsTab = () => {
       }
     } catch (e) {
       toast.error('Failed to save settings');
+    }
+  };
+
+  const handleSteamAutoAchievements = async (enabled: boolean) => {
+    setSteamAutoAchievements(enabled);
+    try {
+      await window.api.saveSetting({ key: 'steam_auto_achievement_sync_enabled', value: enabled });
+      toast.success(enabled ? 'Automatic Steam achievement sync enabled.' : 'Automatic Steam achievement sync disabled.');
+    } catch {
+      setSteamAutoAchievements(!enabled);
+      toast.error('Could not update automatic Steam achievement sync.');
     }
   };
 
@@ -172,6 +191,33 @@ export const IntegrationsTab = () => {
     }
   };
 
+  const handleBlizzardAuth = async () => {
+    setIsAuthLoading(true);
+    setBlizzardAuthPending(true);
+    try {
+      if (!window.api) return;
+      const res = await window.api.authBlizzard();
+      if (res.success) {
+        toast.success(`Battle.net account connected${res.account?.username ? ` as ${res.account.username}` : ''}.`);
+        const accounts = await window.api.getLinkedAccounts('blizzard');
+        setBlizzardAccounts(accounts || []);
+      } else if (res.status === 'cancelled') {
+        toast.info('Battle.net connection cancelled.');
+      } else {
+        toast.error(res.message || 'Battle.net connection failed.');
+      }
+    } catch {
+      toast.error('Battle.net connection failed.');
+    } finally {
+      setBlizzardAuthPending(false);
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleBlizzardCancel = async () => {
+    await window.api?.cancelBlizzardAuth();
+  };
+
   const handleXboxAuth = async () => {
     setIsAuthLoading(true);
     try {
@@ -226,12 +272,13 @@ export const IntegrationsTab = () => {
     }
   };
 
-  const handleUnlink = async (id: number, platform: 'steam' | 'epic' | 'psn' | 'xbox') => {
+  const handleUnlink = async (id: number, platform: 'steam' | 'epic' | 'blizzard' | 'psn' | 'xbox') => {
     try {
       if (window.api) {
         await window.api.unlinkAccount(id);
         if (platform === 'steam') setSteamAccounts(prev => prev.filter(acc => acc.id !== id));
         if (platform === 'epic') setEpicAccounts(prev => prev.filter(acc => acc.id !== id));
+        if (platform === 'blizzard') setBlizzardAccounts(prev => prev.filter(acc => acc.id !== id));
         if (platform === 'psn') setPsnAccounts(prev => prev.filter(acc => acc.id !== id));
         if (platform === 'xbox') setXboxAccounts(prev => prev.filter(acc => acc.id !== id));
         toast.success('Account unlinked');
@@ -261,7 +308,23 @@ export const IntegrationsTab = () => {
     try {
         const res = await runSync(syncPromise);
         
-        if (res && res.success) {
+        if (platform === 'epic' && res) {
+            if (res.status === 'partial') {
+                toast.info(`Epic sync partially completed: ${res.processed}/${res.discovered} games processed, ${res.failures.length} issue(s).`);
+            } else if (res.status === 'empty') {
+                toast.info('Epic sync completed: the linked profile has no visible games.');
+            } else if (res.status === 'private') {
+                toast.error('Epic profile is private. Make game achievements public and try again.');
+            } else if (res.status === 'cancelled') {
+                toast.info('Epic sync was cancelled.');
+            } else if (res.status === 'timeout') {
+                toast.error('Epic sync timed out. Your existing library was not changed.');
+            } else if (!res.success) {
+                toast.error(res.failures?.[0]?.message || 'Epic sync failed. Your existing library was not changed.');
+            } else {
+                toast.success(`Epic sync complete: ${res.added} added, ${res.updated} updated, ${res.achievementsUnlocked} achievement(s) unlocked.`);
+            }
+        } else if (res && res.success) {
             const count = res.added || 0;
             
             toast.success(`Sync complete! Added ${count} games.`);
@@ -285,7 +348,7 @@ export const IntegrationsTab = () => {
 
                 broadcastImport(sourceNames[platform], count, hours);
             }
-        } else {
+        } else if (platform !== 'epic') {
             toast.error(res?.error || 'Sync failed');
         }
     } catch (e) {
@@ -293,7 +356,7 @@ export const IntegrationsTab = () => {
     }
   };
 
-  const AccountList = ({ accounts, platform }: { accounts: any[], platform: 'steam' | 'epic' | 'psn' | 'xbox' }) => (
+  const AccountList = ({ accounts, platform }: { accounts: any[], platform: 'steam' | 'epic' | 'blizzard' | 'psn' | 'xbox' }) => (
     <div className="space-y-2 mb-4">
         {accounts.map(acc => (
             <div key={acc.id} className="flex items-center justify-between p-3 bg-muted/30 border rounded-lg">
@@ -417,6 +480,25 @@ export const IntegrationsTab = () => {
                         </div>
                     </div>
                 </div>
+
+                <div className="flex items-center justify-between gap-4 pt-4 border-t border-border/50">
+                    <div>
+                        <p className="text-sm font-bold">Automatic achievement sync</p>
+                        <p className="text-xs text-muted-foreground max-w-xl">
+                            While Valis tracks a Steam game session, it periodically imports the official unlock state into your local journal. It never unlocks or changes achievements on Steam. The first check is silent.
+                        </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                            type="checkbox"
+                            className="sr-only peer"
+                            checked={steamAutoAchievements}
+                            disabled={steamAccounts.length === 0}
+                            onChange={(event) => handleSteamAutoAchievements(event.target.checked)}
+                        />
+                        <span className="w-11 h-6 rounded-full bg-muted peer-disabled:opacity-40 peer-checked:bg-primary after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:h-5 after:w-5 after:rounded-full after:border after:bg-white after:transition-transform peer-checked:after:translate-x-full" />
+                    </label>
+                </div>
             </div>
         </div>
 
@@ -520,6 +602,44 @@ export const IntegrationsTab = () => {
                       uncommon achievement titles may occasionally mismatch or fail to sync correctly.
                     </span>
                   </p>
+                </div>
+            </div>
+        </div>
+
+        {/* Battle.net / Blizzard Integration */}
+        <div className="p-6 border rounded-xl bg-card transition-shadow hover:shadow-md">
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <ShieldAlert size={20} className="text-primary" /> Battle.net / Blizzard
+            </h2>
+            <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                    Link your official Battle.net identity. Valis does not import a Blizzard library or achievements in this release.
+                </p>
+                {blizzardAccounts.length > 0 ? (
+                    <AccountList accounts={blizzardAccounts} platform="blizzard" />
+                ) : (
+                    <div className="p-4 bg-muted/20 border border-dashed rounded-lg text-center text-sm text-muted-foreground">
+                        No Battle.net accounts linked.
+                    </div>
+                )}
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={blizzardAuthPending ? handleBlizzardCancel : handleBlizzardAuth}
+                        disabled={isAuthLoading && !blizzardAuthPending}
+                        className={blizzardAuthPending
+                          ? "px-4 py-2 border border-destructive/50 text-destructive hover:bg-destructive/10 rounded-lg text-sm font-bold transition-colors flex items-center gap-2"
+                          : "px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 disabled:opacity-50"}
+                    >
+                        {blizzardAuthPending ? <LogOut size={16} /> : <LinkIcon size={16} />}
+                        {blizzardAuthPending ? 'Cancel connection' : 'Connect Battle.net'}
+                    </button>
+                    {blizzardAuthPending && (
+                        <span className="text-xs text-muted-foreground">Waiting for the secure browser callback…</span>
+                    )}
+                </div>
+                <div className="p-3 bg-muted/30 border rounded-md text-xs text-muted-foreground">
+                    OAuth tokens and the Blizzard client secret stay in the configured backend. Valis stores only your account ID and BattleTag.
                 </div>
             </div>
         </div>

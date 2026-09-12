@@ -31,7 +31,7 @@ export function registerGamificationHandlers() {
 
   ipcMain.handle('unlockMark', async (event, markId) => {
       const result = await db.unlockMark(markId);
-      if (result) emitDataChange({ type: 'gamification', source: 'unlockMark', ids: [markId], important: true });
+      if (result.newlyUnlocked) emitDataChange({ type: 'gamification', source: 'unlockMark', ids: [markId], important: true });
       return result;
   });
 

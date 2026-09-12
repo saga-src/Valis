@@ -127,6 +127,78 @@ serve(async (req) => {
       });
     }
 
+    // 4. BLIZZARD ACCOUNT IDENTITY
+    // The client secret and access token stay inside this Edge Function.
+    if (path.endsWith('/blizzard/identity') && req.method === 'POST') {
+      const clientId = Deno.env.get('BLIZZARD_CLIENT_ID');
+      const clientSecret = Deno.env.get('BLIZZARD_CLIENT_SECRET');
+      const configuredRedirectUri = Deno.env.get('BLIZZARD_REDIRECT_URI');
+      const body = await req.json().catch(() => null);
+      const code = typeof body?.code === 'string' ? body.code : '';
+      const redirectUri = typeof body?.redirectUri === 'string' ? body.redirectUri : '';
+
+      if (!clientId || !clientSecret || !configuredRedirectUri) {
+        return new Response(JSON.stringify({ error: 'Blizzard OAuth is not configured.', code: 'BLIZZARD_BACKEND_NOT_CONFIGURED' }), {
+          status: 503,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+        });
+      }
+      if (!code || redirectUri !== configuredRedirectUri) {
+        return new Response(JSON.stringify({ error: 'Invalid Blizzard OAuth request.', code: 'BLIZZARD_OAUTH_REQUEST_INVALID' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+        });
+      }
+
+      const tokenBody = new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri
+      });
+      const tokenResponse = await fetch('https://oauth.battle.net/oauth/token', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: tokenBody
+      });
+      if (!tokenResponse.ok) {
+        return new Response(JSON.stringify({ error: 'Battle.net rejected the authorization code.', code: 'BLIZZARD_TOKEN_EXCHANGE_FAILED' }), {
+          status: 502,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+        });
+      }
+
+      const tokenData = await tokenResponse.json();
+      if (!tokenData?.access_token) {
+        return new Response(JSON.stringify({ error: 'Battle.net did not return an access token.', code: 'BLIZZARD_TOKEN_MISSING' }), {
+          status: 502,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+        });
+      }
+      const identityResponse = await fetch('https://oauth.battle.net/oauth/userinfo', {
+        headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
+      });
+      if (!identityResponse.ok) {
+        return new Response(JSON.stringify({ error: 'Battle.net identity could not be read.', code: 'BLIZZARD_IDENTITY_FETCH_FAILED' }), {
+          status: 502,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+        });
+      }
+
+      const identity = await identityResponse.json();
+      if (!identity?.sub) {
+        return new Response(JSON.stringify({ error: 'Battle.net identity was incomplete.', code: 'BLIZZARD_IDENTITY_MISSING' }), {
+          status: 502,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+        });
+      }
+      return new Response(JSON.stringify({ sub: identity.sub, battletag: identity.battletag || null }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
+      });
+    }
+
     return new Response(JSON.stringify({ error: "Endpoint not handled" }), {
       status: 404,
       headers: { ...corsHeaders, "Content-Type": "application/json" }

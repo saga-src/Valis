@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ListChecks } from 'lucide-react';
+import { analyticsTooltipProps } from '../components/AnalyticsTooltip';
 
 interface CompletionFunnelWidgetProps {
   library: any[];
@@ -49,7 +50,7 @@ export const CompletionFunnelWidget: React.FC<CompletionFunnelWidgetProps> = ({ 
               tickLine={false}
             />
             <Tooltip
-              contentStyle={{ backgroundColor: 'var(--card)', borderColor: 'var(--border)', borderRadius: 8 }}
+              {...analyticsTooltipProps}
               formatter={(value, _name, props) => [`${value} games (${props.payload.percent}%)`, props.payload.label]}
             />
             <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={24}>

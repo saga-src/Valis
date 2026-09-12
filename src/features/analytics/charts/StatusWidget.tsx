@@ -6,6 +6,7 @@ import { useStatusData } from '../hooks/useStatusData';
 import { useCoreAnalytics } from '../hooks/useCoreAnalytics';
 import { formatDuration } from '../../../lib/utils/format';
 import { cn } from '../../../lib/utils/cn';
+import { analyticsTooltipProps } from '../components/AnalyticsTooltip';
 
 interface StatusWidgetProps {
   library: any[];
@@ -68,8 +69,7 @@ export const StatusWidget: React.FC<StatusWidgetProps> = ({ library, sessions })
                 ))}
                 </Pie>
                 <Tooltip 
-                    contentStyle={{ backgroundColor: 'var(--card)', borderRadius: '8px', border: '1px solid var(--border)', color: 'var(--foreground)' }}
-                    itemStyle={{ color: 'var(--foreground)', fontWeight: 'bold' }}
+                    {...analyticsTooltipProps}
                     separator=": "
                 />
             </PieChart>

@@ -1,12 +1,14 @@
 
 import { ipcMain, shell, BrowserWindow } from 'electron';
 import fs from 'fs/promises';
+import path from 'path';
 import { db } from '../db/client.js';
 import * as dbQueries from '../db/queries.js';
 import { getLinkedAccounts, removeLinkedAccount, saveLinkedAccount } from '../db/modules/settings.js';
 import axios from 'axios';
 import { authService } from '../services/AuthService.js';
 import epicAuth from '../services/integrations/EpicAuthService.js';
+import blizzardAuth from '../services/integrations/BlizzardAuthService.js';
 import psnAuthService from '../services/integrations/PsnAuthService.js';
 import psnClient from '../services/integrations/PsnClient.js';
 import { syncSteamLibrary } from '../services/integrations/SteamSyncService.js';
@@ -14,6 +16,9 @@ import { syncEpicLibrary } from '../services/integrations/EpicSyncService.js';
 import { syncPsnLibrary } from '../services/integrations/PsnSyncService.js';
 import { syncXboxLibrary, linkXboxAccount } from '../services/integrations/XboxSyncService.js';
 import { emitDataChange } from '../services/DataChangeBus.js';
+import { achievementWatcher } from '../services/FileWatcherService.js';
+import { steamAutoAchievementSync, STEAM_AUTO_SYNC_SETTING } from '../services/SteamAutoAchievementSyncService.js';
+import { gameWatcher } from '../services/ProcessWatcher.js';
 
 // Helper to expand Windows environment variables like %APPDATA%
 function expandPath(pathStr) {
@@ -51,17 +56,23 @@ export function registerSettingsHandlers() {
         return await db.selectFrom('watch_paths').selectAll().execute();
     });
 
-    ipcMain.handle('settings:add-watch-path', async (_, { path, type }) => {
-        if (!path || !type) throw new Error('Path and type are required');
+    ipcMain.handle('settings:add-watch-path', async (_, { path: watchPath, type }) => {
+        if (!watchPath || !type) throw new Error('Path and type are required');
+        const canonicalPath = path.normalize(path.resolve(expandPath(watchPath)));
+        const existing = await db.selectFrom('watch_paths').selectAll().execute();
+        const duplicate = existing.find((row) => path.normalize(path.resolve(expandPath(row.path))).toLowerCase() === canonicalPath.toLowerCase());
+        if (duplicate) return duplicate;
         const result = await db.insertInto('watch_paths')
-            .values({ path, type, recursive: 1 })
+            .values({ path: canonicalPath, type, recursive: 1 })
             .returningAll()
             .executeTakeFirst();
+        await achievementWatcher.reload();
         return result;
     });
 
     ipcMain.handle('settings:remove-watch-path', async (_, id) => {
         await db.deleteFrom('watch_paths').where('id', '=', Number(id)).execute();
+        await achievementWatcher.reload();
         return true;
     });
 
@@ -84,6 +95,15 @@ export function registerSettingsHandlers() {
         console.log("📝 Backend received setting update:", { key, value });
         try {
             await dbQueries.setSetting(key, value);
+            if (key === STEAM_AUTO_SYNC_SETTING) {
+                steamAutoAchievementSync.setEnabled(value);
+                if (value === true) {
+                    for (const session of gameWatcher.activeSessions.values()) {
+                        steamAutoAchievementSync.sessionStarted(session);
+                    }
+                }
+            }
+            if (key === 'auto_tracking_enabled' || key === 'auto_tracking_interval') gameWatcher.invalidateTargets();
             console.log("✅ Setting saved");
             emitDataChange({ type: 'settings', source: 'settings:save', ids: [key], important: true });
             return { success: true };
@@ -138,11 +158,20 @@ export function registerSettingsHandlers() {
     });
 
     // Epic Authentication
-    ipcMain.handle('auth:epic', async () => {
-        const result = await epicAuth.loginToEpic();
+    ipcMain.handle('auth:epic', async (event) => {
+        const result = await epicAuth.loginToEpic(BrowserWindow.fromWebContents(event.sender));
         if (result?.success) emitDataChange({ type: 'account', source: 'auth:epic', important: true });
         return result;
     });
+
+    // Battle.net / Blizzard Authentication (identity linking only)
+    ipcMain.handle('auth:blizzard', async () => {
+        const result = await blizzardAuth.login();
+        if (result?.success) emitDataChange({ type: 'account', source: 'auth:blizzard', important: true });
+        return result;
+    });
+
+    ipcMain.handle('auth:blizzard-cancel', async () => blizzardAuth.cancel());
 
     // Xbox Authentication (Link Only)
     ipcMain.handle('auth:xbox', async (event) => {
@@ -219,12 +248,26 @@ export function registerSettingsHandlers() {
     ipcMain.handle('settings:sync-epic', async (event) => {
         try {
             const result = await syncEpicLibrary(event.sender);
-            emitDataChange({ type: 'library', source: 'settings:sync-epic', important: true });
-            emitDataChange({ type: 'achievement', source: 'settings:sync-epic', important: Boolean(result?.synced) });
-            return { success: true, ...result };
+            if (result?.success && (result.added > 0 || result.updated > 0)) {
+                emitDataChange({ type: 'library', source: 'settings:sync-epic', important: result.added > 0 });
+            }
+            if (result?.success && result.achievementsUnlocked > 0) {
+                emitDataChange({ type: 'achievement', source: 'settings:sync-epic', important: true });
+            }
+            return result;
         } catch (e) {
             console.error('Epic Sync Error:', e);
-            return { success: false, error: e.message };
+            return {
+                success: false,
+                status: 'error',
+                discovered: 0,
+                processed: 0,
+                added: 0,
+                updated: 0,
+                achievementsUnlocked: 0,
+                skipped: 0,
+                failures: [{ code: 'EPIC_SYNC_UNEXPECTED', message: e.message }]
+            };
         }
     });
 

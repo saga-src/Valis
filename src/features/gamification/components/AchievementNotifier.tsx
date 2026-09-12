@@ -7,6 +7,20 @@ import achievementSound from '../../../../public/sounds/achievements.mp3';
 import milestoneSound from '../../../../public/sounds/milestone_unlock.mp3';
 import protocolSound from '../../../../public/sounds/protocol_unlock.mp3';
 
+const recentNotificationKeys = new Map<string, number>();
+const claimNotification = (item: ShardItem) => {
+  if (String(item.id).startsWith('test-')) return true;
+  const key = `${item.type}:${item.id}`;
+  const now = Date.now();
+  const previous = recentNotificationKeys.get(key) || 0;
+  if (now - previous < 5 * 60 * 1000) return false;
+  recentNotificationKeys.set(key, now);
+  for (const [candidate, timestamp] of recentNotificationKeys) {
+    if (now - timestamp >= 5 * 60 * 1000) recentNotificationKeys.delete(candidate);
+  }
+  return true;
+};
+
 export const AchievementNotifier = () => {
   const [queue, setQueue] = useState<ShardItem[]>([]);
   const [current, setCurrent] = useState<ShardItem | null>(null);
@@ -17,6 +31,7 @@ export const AchievementNotifier = () => {
     resolvedSoundUrl: string, 
     settingsPrefix: 'protocol' | 'achievement' | 'milestone'
   ) => {
+    if (!claimNotification(item)) return;
     try {
         const [toastEnabled, soundEnabled] = await Promise.all([
             window.api.getSetting(`${settingsPrefix}_toast`),
@@ -96,7 +111,7 @@ export const AchievementNotifier = () => {
             
             await handleNotification(
                 {
-                    id: unlock.id,
+                    id: `${data.gameId}:${unlock.id}`,
                     name: name,
                     iconUrl: details ? details.iconUrl : undefined,
                     type: 'default'

@@ -2,6 +2,7 @@
 import React, { useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { PieChart as PieIcon, Circle } from 'lucide-react';
+import { analyticsTooltipProps } from '../components/AnalyticsTooltip';
 
 interface CompletionWidgetProps {
   library: any[];
@@ -75,8 +76,7 @@ export const CompletionWidget: React.FC<CompletionWidgetProps> = ({ library }) =
                 ))}
                 </Pie>
                 <Tooltip 
-                    contentStyle={{ backgroundColor: 'var(--card)', borderRadius: '8px', border: '1px solid var(--border)', color: 'var(--foreground)' }}
-                    itemStyle={{ color: 'var(--foreground)', fontWeight: 'bold' }}
+                    {...analyticsTooltipProps}
                     separator=": "
                 />
             </PieChart>

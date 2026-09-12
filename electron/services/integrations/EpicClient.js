@@ -1,216 +1,221 @@
 import { BrowserWindow } from 'electron';
+import { classifyEpicProfileSnapshot, EPIC_PROGRESS_CHANNEL } from './EpicSyncUtils.js';
 
-class EpicClient {
-    
-    /**
-     * Harvests library data from Epic Games public profile with real-time progress reporting.
-     * @param {BrowserWindow} mainWindow Parent window for modal behavior
-     * @param {string} accountId The Epic Account ID
-     * @param {WebContents} sender IPC sender to transmit progress events
-     */
-    async fetchLibrary(mainWindow, accountId, sender) {
-        console.log(`[EpicClient] Starting Harvest for: ${accountId}`);
-        
-        // Report initial status
-        if (sender) sender.send('steam:sync-progress', { message: 'Connecting to Epic Games...', percent: 5 });
+const NAVIGATION_TIMEOUT_MS = 30_000;
+const DOM_TIMEOUT_MS = 20_000;
+const OVERALL_TIMEOUT_MS = 10 * 60_000;
 
-        // Force English URL
-        const targetUrl = `https://store.epicgames.com/en-US/u/${accountId}`;
-        
-        const syncWindow = new BrowserWindow({
-            width: 1600,
-            height: 1000,
-            show: false, // Keep hidden in production
-            parent: mainWindow,
-            webPreferences: {
-                nodeIntegration: false,
-                contextIsolation: true,
-                webSecurity: false
-            }
-        });
+function abortError(reason) {
+  const timedOut = reason === 'timeout';
+  const error = new Error(timedOut ? 'Epic sync timed out.' : 'Epic sync was cancelled.');
+  error.code = timedOut ? 'EPIC_TIMEOUT' : 'EPIC_CANCELLED';
+  return error;
+}
 
-        syncWindow.loadURL(targetUrl);
-        const wait = (ms) => new Promise(r => setTimeout(r, ms));
+function withDeadline(promise, timeoutMs, signal, code) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (handler, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      handler(value);
+    };
+    const timer = setTimeout(() => {
+      const error = new Error(`${code} exceeded ${timeoutMs}ms.`);
+      error.code = code;
+      finish(reject, error);
+    }, timeoutMs);
+    const onAbort = () => finish(reject, abortError(signal.reason));
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then((value) => finish(resolve, value), (error) => finish(reject, error));
+  });
+}
 
-        return new Promise(async (resolve, reject) => {
-            // 15 minute timeout
-            const globalTimeout = setTimeout(() => {
-                if (!syncWindow.isDestroyed()) syncWindow.close();
-                resolve([]); 
-            }, 900000); 
+function sendProgress(sender, data) {
+  if (sender && !sender.isDestroyed?.()) sender.send(EPIC_PROGRESS_CHANNEL, data);
+}
 
+async function waitForProfileSnapshot(webContents, signal) {
+  return withDeadline(webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const startedAt = Date.now();
+      const inspect = () => {
+        const bodyText = document.body?.innerText || '';
+        const anchors = Array.from(document.querySelectorAll('a[href]'));
+        const links = [];
+        const seen = new Set();
+        let selectorMatched = false;
+
+        for (const anchor of anchors) {
+          const text = anchor.innerText || '';
+          const href = anchor.href || '';
+          if (/achievement|total xp earned/i.test(text) || /achievement/i.test(href)) {
+            selectorMatched = true;
             try {
-                // --- STEP 1: LOAD ---
-                if (sender) sender.send('steam:sync-progress', { message: 'Loading Profile (Please wait)...', percent: 10 });
-                await wait(8000);
-                
-                // --- STEP 2: SCROLL ---
-                if (sender) sender.send('steam:sync-progress', { message: 'Scrolling to find all games...', percent: 15 });
-                
-                await syncWindow.webContents.executeJavaScript(`
-                    new Promise(resolve => {
-                        let totalHeight = 0;
-                        const distance = 300;
-                        const timer = setInterval(() => {
-                            const scrollHeight = document.body.scrollHeight;
-                            window.scrollBy(0, distance);
-                            totalHeight += distance;
-                            // Stop if bottom reached or sanity limit
-                            if(totalHeight >= scrollHeight || totalHeight > 50000){
-                                clearInterval(timer);
-                                resolve();
-                            }
-                        }, 100); 
-                    })
-                `);
-                await wait(3000);
+              const url = new URL(href);
+              const parts = url.pathname.split('/').filter(Boolean);
+              const slug = parts.at(-1);
+              if (!slug || seen.has(url.href)) continue;
+              seen.add(url.href);
+              links.push({
+                url: url.href,
+                title: anchor.getAttribute('aria-label') || text.trim() || slug.replace(/-/g, ' ')
+              });
+            } catch {}
+          }
+        }
 
-                // --- STEP 3: EXTRACT LINKS ---
-                if (sender) sender.send('steam:sync-progress', { message: 'Extracting Game Links...', percent: 25 });
-                
-                const gameLinks = await syncWindow.webContents.executeJavaScript(`
-                    (() => {
-                        try {
-                            const all = Array.from(document.querySelectorAll('*'));
-                            
-                            // Look for achievement-related keywords in elements
-                            const targets = all.filter(el => 
-                                el.children.length === 0 && el.innerText && (
-                                    el.innerText.includes('Total XP Earned') || 
-                                    el.innerText.includes('Achievement Progress') ||
-                                    el.innerText.includes('Achievements')
-                                )
-                            );
+        const terminalText = /private|privacy settings|not public|no games|no achievements|hasn['’]t earned|0 games/i.test(bodyText);
+        if (links.length || terminalText || Date.now() - startedAt >= ${DOM_TIMEOUT_MS - 250}) {
+          resolve({ links, bodyText: bodyText.slice(0, 4000), selectorMatched });
+          return;
+        }
+        setTimeout(inspect, 250);
+      };
+      inspect();
+    })
+  `), DOM_TIMEOUT_MS, signal, 'EPIC_PROFILE_DOM_TIMEOUT');
+}
 
-                            const games = [];
-                            const seen = new Set();
+async function extractGame(webContents, fallbackTitle, signal) {
+  const safeFallbackTitle = JSON.stringify(String(fallbackTitle || 'Epic game'));
+  return withDeadline(webContents.executeJavaScript(`
+    new Promise((resolve) => {
+      const startedAt = Date.now();
+      const inspect = () => {
+        const bodyText = document.body?.innerText || '';
+        const rows = Array.from(document.querySelectorAll('[data-testid*=achievement], li, article, div'));
+        const unlockedAchievements = [];
+        const seen = new Set();
 
-                            targets.forEach(t => {
-                                let parent = t.parentElement;
-                                let rawUrl = null;
-                                
-                                // Traverse up to find link
-                                for(let k=0; k<15; k++) {
-                                    if(!parent) break;
-                                    if(parent.tagName === 'A' && parent.href) { rawUrl = parent.href; break; }
-                                    parent = parent.parentElement;
-                                }
+        for (const row of rows) {
+          const text = row.innerText || '';
+          if (!/\\bUnlocked\\s+/i.test(text) || !/\\d+\\s*XP/i.test(text)) continue;
+          const lines = text.split('\\n').map((line) => line.trim()).filter(Boolean);
+          const rawDate = lines.find((line) => /^Unlocked\\s+/i.test(line));
+          const name = lines.find((line) => line !== rawDate && !/\\d+\\s*XP/i.test(line));
+          if (name && rawDate && !seen.has(name)) {
+            seen.add(name);
+            unlockedAchievements.push({ name, rawDate });
+          }
+        }
 
-                                if(rawUrl) {
-                                    try {
-                                        const u = new URL(rawUrl);
-                                        const pathSegments = u.pathname.split('/');
-                                        // Ensure en-US locale for consistent scraping
-                                        if(pathSegments[1] && /^[a-z]{2}-[A-Z]{2}$/.test(pathSegments[1])) {
-                                            pathSegments[1] = 'en-US';
-                                        } else {
-                                            pathSegments.splice(1, 0, 'en-US');
-                                        }
-                                        u.pathname = pathSegments.join('/');
-                                        const finalUrl = u.href;
+        if (unlockedAchievements.length || /achievement|no achievements/i.test(bodyText) || Date.now() - startedAt >= ${DOM_TIMEOUT_MS - 250}) {
+          const url = new URL(window.location.href);
+          resolve({
+            title: document.querySelector('h1')?.innerText?.trim() || ${safeFallbackTitle},
+            id: url.pathname.split('/').filter(Boolean).at(-1),
+            unlockedAchievements
+          });
+          return;
+        }
+        setTimeout(inspect, 250);
+      };
+      inspect();
+    })
+  `), DOM_TIMEOUT_MS, signal, 'EPIC_GAME_DOM_TIMEOUT');
+}
 
-                                        // Filter out own profile link
-                                        if (!seen.has(finalUrl) && !finalUrl.endsWith('/u/' + '${accountId}')) {
-                                            seen.add(finalUrl);
-                                            const slug = finalUrl.split('/').pop();
-                                            const niceTitle = slug.replace(/-/g, ' ').replace(/\\b\\w/g, l => l.toUpperCase());
-                                            games.push({ url: finalUrl, title: niceTitle });
-                                        }
-                                    } catch (err) {}
-                                }
-                            });
-                            return games;
-                        } catch (e) { return { error: e.message }; }
-                    })()
-                `);
+export class EpicClient {
+  async fetchLibrary(mainWindow, accountId, sender) {
+    const controller = new AbortController();
+    let closingInternally = false;
+    const failures = [];
+    const syncWindow = new BrowserWindow({
+      width: 1600,
+      height: 1000,
+      show: false,
+      parent: mainWindow || undefined,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        webSecurity: true,
+        partition: 'persist:valis_epic'
+      }
+    });
 
-                if (gameLinks.error) throw new Error(gameLinks.error);
-                
-                const totalGames = gameLinks.length;
-                if (sender) sender.send('steam:sync-progress', { message: `Found ${totalGames} games. Starting individual scans...`, percent: 30 });
-                
-                const finalLibrary = [];
-                let processed = 0;
+    syncWindow.once('closed', () => {
+      if (!closingInternally && !controller.signal.aborted) controller.abort('cancelled');
+    });
+    const overallTimer = setTimeout(() => controller.abort('timeout'), OVERALL_TIMEOUT_MS);
 
-                // --- STEP 4: VISIT EACH GAME ---
-                for (const game of gameLinks) {
-                    if (syncWindow.isDestroyed()) break;
-                    
-                    processed++;
-                    const percent = 30 + Math.round((processed / totalGames) * 60); // Scale from 30% to 90%
-                    
-                    if (sender) {
-                        sender.send('steam:sync-progress', { 
-                            message: `Scanning: ${game.title} (${processed}/${totalGames})`, 
-                            percent: percent 
-                        });
-                    }
+    try {
+      sendProgress(sender, { message: 'Connecting to Epic Games...', percent: 5, stage: 'profile' });
+      const profileUrl = `https://store.epicgames.com/en-US/u/${encodeURIComponent(accountId)}`;
+      await withDeadline(syncWindow.loadURL(profileUrl), NAVIGATION_TIMEOUT_MS, controller.signal, 'EPIC_PROFILE_NAV_TIMEOUT');
+      sendProgress(sender, { message: 'Reading Epic profile...', percent: 15, stage: 'profile' });
+      const snapshot = await waitForProfileSnapshot(syncWindow.webContents, controller.signal);
+      const profileStatus = classifyEpicProfileSnapshot(snapshot);
 
-                    await syncWindow.loadURL(game.url);
-                    await wait(4000); // Wait for dynamic content to load
+      if (profileStatus !== 'complete') {
+        return {
+          status: profileStatus,
+          games: [],
+          discovered: 0,
+          processed: 0,
+          failures: profileStatus === 'error'
+            ? [{ code: 'EPIC_PROFILE_SELECTOR_MISSING', message: 'Epic profile structure was not recognized.' }]
+            : []
+        };
+      }
 
-                    const gameData = await syncWindow.webContents.executeJavaScript(`
-                        (() => {
-                            const BLOCKLIST = ["Discover", "Browse", "News", "Wishlist", "Cart", "Achievements", "Friends", "Filter", "Sort by", "Progress", "Backlog", "Platinum"];
-                            const h1 = document.querySelector('h1');
-                            const title = h1 ? h1.innerText : "${game.title}";
-                            
-                            const allDivs = Array.from(document.querySelectorAll('div'));
-                            const xpBadges = allDivs.filter(d => /\\d+\\s*XP/i.test(d.innerText));
-
-                            const unlockedList = [];
-                            const seen = new Set();
-
-                            xpBadges.forEach(badge => {
-                                let row = badge.parentElement; 
-                                for(let k=0; k<4; k++) { if(row && row.parentElement) row = row.parentElement; }
-
-                                if(row) {
-                                    const text = row.innerText;
-                                    const lines = text.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
-                                    const dateLine = lines.find(l => l.match(/^Unlocked\\s+/i));
-
-                                    if(dateLine) {
-                                        const name = lines[0]; 
-                                        if(name && !seen.has(name) && !BLOCKLIST.includes(name)) {
-                                            seen.add(name);
-                                            unlockedList.push({
-                                                name: name,         
-                                                rawDate: dateLine   
-                                            });
-                                        }
-                                    }
-                                }
-                            });
-
-                            return {
-                                title: title,
-                                id: window.location.href.split('/').pop(),
-                                achievementCount: unlockedList.length,
-                                unlockedAchievements: unlockedList,
-                                platform: 'epic'
-                            };
-                        })()
-                    `);
-
-                    if (gameData.id) {
-                        finalLibrary.push(gameData);
-                    }
-                }
-
-                if (sender) sender.send('steam:sync-progress', { message: 'Finalizing Library...', percent: 95 });
-                
-                clearTimeout(globalTimeout);
-                if (!syncWindow.isDestroyed()) syncWindow.close();
-                resolve(finalLibrary);
-
-            } catch (err) {
-                console.error('[EpicClient] Error:', err);
-                if (!syncWindow.isDestroyed()) syncWindow.close();
-                resolve([]);
-            }
+      const games = [];
+      const total = snapshot.links.length;
+      for (let index = 0; index < total; index += 1) {
+        const link = snapshot.links[index];
+        if (controller.signal.aborted) throw abortError(controller.signal.reason);
+        sendProgress(sender, {
+          message: `Reading Epic game ${index + 1} of ${total}`,
+          current: index + 1,
+          total,
+          percent: 20 + Math.round(((index + 1) / total) * 65),
+          stage: 'games'
         });
+        try {
+          await withDeadline(syncWindow.loadURL(link.url), NAVIGATION_TIMEOUT_MS, controller.signal, 'EPIC_GAME_NAV_TIMEOUT');
+          const game = await extractGame(syncWindow.webContents, link.title, controller.signal);
+          if (!game?.id) {
+            const error = new Error('Epic game identifier was not found.');
+            error.code = 'EPIC_GAME_ID_MISSING';
+            throw error;
+          }
+          games.push(game);
+        } catch (error) {
+          if (error.code === 'EPIC_CANCELLED' || error.code === 'EPIC_TIMEOUT') throw error;
+          failures.push({
+            title: link.title,
+            code: error.code || 'EPIC_GAME_READ_FAILED',
+            message: error.message
+          });
+        }
+      }
+
+      return {
+        status: failures.length ? 'partial' : 'complete',
+        games,
+        discovered: total,
+        processed: total,
+        failures
+      };
+    } catch (error) {
+      const status = error.code === 'EPIC_CANCELLED'
+        ? 'cancelled'
+        : (error.code === 'EPIC_TIMEOUT' || /TIMEOUT/.test(error.code || '') ? 'timeout' : 'error');
+      return {
+        status,
+        games: [],
+        discovered: 0,
+        processed: 0,
+        failures: [{ code: error.code || 'EPIC_CLIENT_ERROR', message: error.message }]
+      };
+    } finally {
+      clearTimeout(overallTimer);
+      closingInternally = true;
+      if (!syncWindow.isDestroyed()) syncWindow.close();
     }
+  }
 }
 
 export default new EpicClient();

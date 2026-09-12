@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { Calendar } from 'lucide-react';
 import { useEraData } from '../hooks/useEraData';
 import { useTheme } from '../../../lib/theme';
+import { analyticsTooltipProps } from '../components/AnalyticsTooltip';
 
 interface EraWidgetProps {
   library: any[];
@@ -39,15 +40,8 @@ export const EraWidget: React.FC<EraWidgetProps> = ({ library }) => {
                 domain={[0, 'auto']} 
             />
             <Tooltip 
+                {...analyticsTooltipProps}
                 cursor={{ fill: theme === 'stealth' ? '#262626' : '#f1f5f9' }}
-                contentStyle={{ 
-                    backgroundColor: 'var(--card)', 
-                    borderColor: 'var(--border)', 
-                    borderRadius: '8px',
-                    fontSize: '12px',
-                    fontWeight: 'bold',
-                    color: 'var(--foreground)'
-                }}
             />
             <Bar 
                 dataKey="count" 

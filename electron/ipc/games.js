@@ -1,17 +1,16 @@
 import { ipcMain, dialog } from 'electron';
-import { spawn } from 'child_process';
-import fs from 'fs';
-import path from 'path';
 import * as db from '../db/queries.js';
 import * as igdb from '../lib/igdb.js';
 import { cloudGate } from '../services/CloudGate.js';
 import achievementOrchestrator from '../services/AchievementOrchestrator.js';
 import { saveAchievementsToDb } from '../db/modules/achievements.js';
-import { incrementUserStat } from '../db/modules/gamification.js';
 import { emitDataChange } from '../services/DataChangeBus.js';
+import { gameLaunchService } from '../services/GameLaunchService.js';
+import { gameWatcher } from '../services/ProcessWatcher.js';
 
 // Helper to notify all windows
 const broadcastLibraryUpdate = (event) => {
+    gameWatcher.invalidateTargets();
     if (event && event.sender && !event.sender.isDestroyed()) {
         event.sender.send('library-updated'); 
     }
@@ -199,48 +198,11 @@ export function registerGameHandlers() {
 
   // Launcher
   ipcMain.handle('launch-game', async (event, gameId) => {
-    console.log(`[Launch Debug] Request received for game ID: ${gameId}`);
     try {
-      const game = await db.getGameById(gameId);
-      if (!game || !game.executable) {
-        console.error(`[Launch Error] No executable found for game ID: ${gameId}`);
-        throw new Error('No executable linked for this game');
-      }
-
-      const exePath = game.executable;
-      console.log(`[Launch Debug] Found exe path: ${exePath}`);
-
-      if (!fs.existsSync(exePath)) {
-        console.error(`[Launch Error] Path does not exist on disk: ${exePath}`);
-        throw new Error(`File not found: ${exePath}`);
-      }
-
-      console.log(`[Launch Debug] Spawning process...`);
-      const child = spawn(exePath, [], {
-        detached: true,
-        stdio: 'ignore',
-        cwd: path.dirname(exePath)
-      });
-
-      child.on('error', (err) => {
-        console.error('[Launch Error] Spawn failed:', err);
-      });
-
-      child.on('spawn', async () => {
-        console.log('[Launch Debug] Process spawned successfully with PID:', child.pid);
-        // ⚡ OPERATOR TRIGGER: Increment launcher starts
-        try {
-            await incrementUserStat('launcher_starts', 1);
-        } catch(e) {
-            console.warn('[Launch] Failed to increment launcher metric:', e);
-        }
-      });
-
-      child.unref();
-      return { success: true };
+      return await gameLaunchService.launch(gameId);
     } catch (error) {
-      console.error('[Launch Error] Catch-all:', error);
-      return { success: false, error: error.message };
+      console.error('[Launch] Unexpected failure:', error);
+      return { success: false, status: 'error', error: error.message };
     }
   });
 }

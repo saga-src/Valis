@@ -11,6 +11,59 @@ import { getLinkedAccounts, saveLinkedAccount } from '../db/modules/settings.js'
  * Includes heavy logging to track routing decisions for platform exclusives.
  */
 class AchievementOrchestrator {
+  async fetchSteamSnapshot(game, accountId, signal) {
+    if (!game?.steam_id || game.steam_id === 'undefined') {
+      return { status: 'skipped', reason: 'missing_steam_id', definitionsComplete: false, achievements: [] };
+    }
+
+    const accounts = accountId ? [{ external_id: accountId }] : await getLinkedAccounts('steam');
+    const steamUserId = accounts[0]?.external_id;
+    if (!steamUserId) {
+      return { status: 'skipped', reason: 'unlinked_account', definitionsComplete: false, achievements: [] };
+    }
+
+    try {
+      const schema = await cloudGate.fetchSteamSchema(game.steam_id, { signal });
+      if (!schema.length) {
+        return { status: 'no-achievements', definitionsComplete: true, achievements: [] };
+      }
+
+      const progressData = await cloudGate.fetchSteamAchievements(steamUserId, game.steam_id, { signal });
+      const playerStats = progressData?.playerstats;
+      if (!playerStats || playerStats.success === false) {
+        return { status: 'unavailable', reason: 'private_or_unavailable', definitionsComplete: true, achievements: [] };
+      }
+
+      const unlockedMap = new Map((playerStats.achievements || []).map((item) => [item.apiname, item]));
+      const achievements = schema.map((definition) => {
+        const progress = unlockedMap.get(definition.name);
+        return {
+          id: definition.name,
+          name: definition.displayName,
+          description: definition.description || '',
+          icon: definition.icon,
+          is_hidden: definition.hidden === 1,
+          unlocked: progress?.achieved === 1,
+          unlocked_at: progress?.achieved === 1 && progress.unlocktime
+            ? new Date(progress.unlocktime * 1000).toISOString()
+            : null
+        };
+      });
+
+      return { status: 'complete', definitionsComplete: true, achievements };
+    } catch (error) {
+      if (signal?.aborted) return { status: 'cancelled', reason: 'shutdown', retryable: false, definitionsComplete: false, achievements: [] };
+      return {
+        status: 'error',
+        reason: error?.response?.status === 429 ? 'rate_limited' : 'network_or_upstream',
+        retryable: !error?.response?.status || error.response.status === 429 || error.response.status >= 500,
+        definitionsComplete: false,
+        achievements: [],
+        error: error.message
+      };
+    }
+  }
+
   /**
    * Fetches achievement status and definitions for a game from its native source.
    * @param {Object} game Raw DB Game object

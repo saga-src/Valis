@@ -62,3 +62,9 @@ supabase/functions/*/deno.lock
 # --- Electron Builder ---
 # Note: We KEEP the 'build/' folder if it contains your icon.ico/logo.png
 # We IGNORE the output directories defined in package.json
+
+
+.old_dbs/
+.agents/
+.claude/
+tests/

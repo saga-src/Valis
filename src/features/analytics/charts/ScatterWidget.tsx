@@ -3,6 +3,7 @@ import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, ResponsiveContaine
 import { Crosshair } from 'lucide-react';
 import { useScatterData } from '../hooks/useScatterData';
 import { useTheme } from '../../../lib/theme';
+import { AnalyticsTooltipSurface } from '../components/AnalyticsTooltip';
 
 interface ScatterWidgetProps {
   library: any[];
@@ -55,7 +56,7 @@ export const ScatterWidget: React.FC<ScatterWidgetProps> = ({ library, gamePlayt
                     if (active && payload && payload.length) {
                         const d = payload[0].payload;
                         return (
-                            <div className="bg-popover border border-border text-popover-foreground p-3 rounded-lg shadow-xl text-xs space-y-1">
+                            <AnalyticsTooltipSurface className="space-y-1">
                                 <p className="font-black border-b pb-1 mb-1">{d.name}</p>
                                 <div className="flex justify-between gap-4">
                                     <span className="text-muted-foreground font-bold">Score:</span>
@@ -65,7 +66,7 @@ export const ScatterWidget: React.FC<ScatterWidgetProps> = ({ library, gamePlayt
                                     <span className="text-muted-foreground font-bold">Time:</span>
                                     <span className="font-mono">{d.x}h</span>
                                 </div>
-                            </div>
+                            </AnalyticsTooltipSurface>
                         );
                     }
                     return null;

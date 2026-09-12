@@ -119,6 +119,7 @@ export const SessionControlPanel: React.FC<SessionControlPanelProps> = ({ game, 
 
   // Derived State
   const isSessionActive = activeSession?.gameId === String(game?.id);
+  const [isLaunching, setIsLaunching] = useState(false);
 
   // Handlers
   const handleAddTag = (tag: string) => {
@@ -144,14 +145,19 @@ export const SessionControlPanel: React.FC<SessionControlPanelProps> = ({ game, 
   };
 
   const handleLaunch = async () => {
-    if (!game.executable) return;
+    if (!game.executable || isLaunching) return;
     if (window.api && window.api.launchGame) {
-      const res = await window.api.launchGame(game.id);
-      if (res.success) {
-        toast.success(`Launching ${game.title || game.name}...`);
-        reportSignal('GAME_LAUNCH');
-      } else {
-        toast.error(`Launch failed: ${res.error}`);
+      setIsLaunching(true);
+      try {
+        const res = await window.api.launchGame(game.id);
+        if (res.success) {
+          toast.success(`Launching ${game.title || game.name}...`);
+          reportSignal('GAME_LAUNCH');
+        } else {
+          toast.error(`Launch failed: ${res.error}`);
+        }
+      } finally {
+        setIsLaunching(false);
       }
     }
   };
@@ -189,11 +195,11 @@ export const SessionControlPanel: React.FC<SessionControlPanelProps> = ({ game, 
             {game.executable && (
                 <button
                     onClick={handleLaunch}
-                    disabled={isSessionActive}
-                    title={isSessionActive ? "Game is already running" : "Launch Game"}
+                    disabled={isSessionActive || isLaunching}
+                    title={isSessionActive ? "Game is already running" : isLaunching ? "Starting game" : "Launch Game"}
                     className={cn(
                         "flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
-                        isSessionActive ? "opacity-50 cursor-not-allowed grayscale" : "hover:bg-emerald-500/20"
+                        isSessionActive || isLaunching ? "opacity-50 cursor-not-allowed grayscale" : "hover:bg-emerald-500/20"
                     )}
                 >
                     <Rocket size={14} /> Launch Game

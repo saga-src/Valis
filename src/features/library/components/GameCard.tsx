@@ -43,6 +43,7 @@ export const GameCard: React.FC<GameCardProps> = ({
   const { toast } = useToast();
   const { museumMode, coverClickAction, hoverButtonAction } = useSettings();
   const { reportSignal } = useMarkObserver();
+  const [isLaunching, setIsLaunching] = React.useState(false);
 
   const totalSeconds = getTotalPlaytimeSeconds(game);
   const statusColor = getStatusColorVar(game.status);
@@ -57,18 +58,24 @@ export const GameCard: React.FC<GameCardProps> = ({
 
   // --- INTERACTION LOGIC ---
   const handleLaunch = async () => {
+    if (isLaunching) return;
     if (!game.executable) {
       toast.error('No executable linked for this game.');
       return;
     }
     
     if (window.api && window.api.launchGame) {
-      const res = await window.api.launchGame(game.id);
-      if (res.success) {
-        toast.success(`Launching ${game.name || game.title}...`);
-        reportSignal('GAME_LAUNCH');
-      } else {
-        toast.error(`Launch failed: ${res.error}`);
+      setIsLaunching(true);
+      try {
+        const res = await window.api.launchGame(game.id);
+        if (res.success) {
+          toast.success(`Launching ${game.name || game.title}...`);
+          reportSignal('GAME_LAUNCH');
+        } else {
+          toast.error(`Launch failed: ${res.error}`);
+        }
+      } finally {
+        setIsLaunching(false);
       }
     }
   };
@@ -216,6 +223,7 @@ export const GameCard: React.FC<GameCardProps> = ({
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-end justify-between p-3 pointer-events-none z-10">
           <button
+            disabled={isLaunching}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -226,7 +234,7 @@ export const GameCard: React.FC<GameCardProps> = ({
               museumMode ? "rounded-none" : "rounded-full"
             )}
           >
-            <ActionIcon action={hoverButtonAction} />
+            {isLaunching ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <ActionIcon action={hoverButtonAction} />}
           </button>
         </div>
       </div>

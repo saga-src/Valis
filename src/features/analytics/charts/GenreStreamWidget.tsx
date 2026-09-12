@@ -3,6 +3,7 @@ import React from 'react';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Layers } from 'lucide-react';
 import { useGenreEvolution } from '../hooks/useGenreEvolution';
+import { analyticsTooltipProps } from '../components/AnalyticsTooltip';
 
 interface GenreStreamWidgetProps {
   library: any[];
@@ -41,8 +42,7 @@ export const GenreStreamWidget: React.FC<GenreStreamWidgetProps> = ({ library, s
                 hide 
             />
             <Tooltip 
-                contentStyle={{ backgroundColor: 'var(--card)', borderColor: 'var(--border)', borderRadius: '8px' }}
-                itemStyle={{ color: 'var(--foreground)' }}
+                {...analyticsTooltipProps}
             />
             {keys.map((key, index) => {
                 const color = COLORS[index % COLORS.length];

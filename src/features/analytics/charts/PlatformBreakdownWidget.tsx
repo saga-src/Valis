@@ -3,6 +3,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { Store } from 'lucide-react';
 import { CUSTOM_PLATFORM_DATA } from '../../../types/index';
 import { STORE_NAMES } from '../../library/utils/libraryUtils';
+import { analyticsTooltipProps } from '../components/AnalyticsTooltip';
 
 interface PlatformBreakdownWidgetProps {
   library: any[];
@@ -85,7 +86,7 @@ export const PlatformBreakdownWidget: React.FC<PlatformBreakdownWidgetProps> = (
                 ))}
               </Pie>
               <Tooltip
-                contentStyle={{ backgroundColor: 'var(--card)', borderColor: 'var(--border)', borderRadius: 8 }}
+                {...analyticsTooltipProps}
                 formatter={(value, _name, props) => [`${value} games, ${props.payload.hours}h`, props.payload.name]}
               />
             </PieChart>

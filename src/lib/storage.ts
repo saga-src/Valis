@@ -27,6 +27,7 @@ export interface StorageApi {
   selectExecutable: () => Promise<string | null>;
   openFileDialog: () => Promise<string | null>;
   updateWatcherSettings: (settings: { enabled: boolean; interval: number }) => Promise<boolean>;
+  getWatcherHealth: () => Promise<any>;
   onSessionStarted: (callback: (data: { gameId: string; startTime: number; sessionId?: string }) => void) => () => void;
   onSessionEnded: (callback: (data: { gameId: string; duration: number }) => void) => () => void;
   startSession: (gameId: string, startTime: number) => Promise<{ success: boolean; sessionId?: string; error?: string }>;
@@ -59,7 +60,7 @@ export interface StorageApi {
   onAppClosing: (callback: () => void) => () => void;
   sendReadyToQuit: () => void;
   getDatabaseFile: () => Promise<Uint8Array>;
-  launchGame: (gameId: string) => Promise<{ success: boolean; error?: string }>;
+  launchGame: (gameId: string) => Promise<import('../types/electron').GameLaunchResult>;
 }
 
 export const saveGame = async (game: any) => {

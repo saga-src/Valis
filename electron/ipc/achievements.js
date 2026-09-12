@@ -6,6 +6,7 @@ import { getLibrary } from '../db/modules/games.js';
 import achievementOrchestrator from '../services/AchievementOrchestrator.js';
 import { getLinkedAccounts } from '../db/modules/settings.js';
 import { emitDataChange } from '../services/DataChangeBus.js';
+import { steamAutoAchievementSync } from '../services/SteamAutoAchievementSyncService.js';
 
 const hasValue = (value) => value !== undefined && value !== null && String(value) !== '' && String(value) !== 'undefined' && String(value) !== 'null';
 
@@ -195,6 +196,35 @@ export function setupAchievementsHandlers(mainWindow) {
 
       const before = await db.getAchievements(gameId);
       const unlockedBefore = countUnlocked(before);
+
+      if (platform === 'steam') {
+        const result = await steamAutoAchievementSync.syncGame(gameId, { reason: 'manual', force: true });
+        if (!result.success) {
+          return {
+            success: false,
+            gameId,
+            platform,
+            unsupported: result.status === 'skipped',
+            error: result.reason || result.error || 'Steam achievement data is temporarily unavailable.'
+          };
+        }
+        const after = await db.getAchievements(gameId);
+        const unlockedAfter = countUnlocked(after);
+        event.sender.send('achievements:game-refresh-progress', {
+          gameId, stage: 'done', message: 'Steam achievement sync complete.'
+        });
+        return {
+          success: true,
+          gameId,
+          platform,
+          total: result.total,
+          unlockedBefore,
+          unlockedAfter,
+          newlyUnlocked: result.newlyUnlocked,
+          definitionsUpdated: result.definitionsUpdated
+        };
+      }
+
       const data = await achievementOrchestrator.fetchAchievements(platformResolution.routedGame);
 
       if (!data || data.length === 0) {
