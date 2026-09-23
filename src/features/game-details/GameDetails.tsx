@@ -6,6 +6,7 @@ import { useGameMetadata } from './hooks/useGameMetadata';
 import { SessionsTab } from './tabs/SessionsTab';
 import { ReviewsTab } from './tabs/ReviewsTab';
 import { AchievementsTab } from './tabs/AchievementsTab';
+import { getAchievementCatalogDisplay } from './achievementCatalog';
 import { useGameAchievements } from './hooks/useGameAchievements';
 import EditGameModal from './components/EditGameModal';
 import ShareModal from '../share/ShareModal';
@@ -91,7 +92,7 @@ export const GameDetails: React.FC = () => {
   if (loading) return <div className="p-10 text-center text-muted-foreground animate-pulse">Loading Game Vault...</div>;
   if (!game || !metadata) return <div className="p-10 text-center">Game not found</div>;
 
-  const unlockedAchievements = achievements.filter(a => !!a.unlockedAt).length;
+  const achievementCatalog = getAchievementCatalogDisplay(achievements);
 
   return (
     <div className="flex flex-col h-full overflow-y-auto animate-in fade-in duration-300">
@@ -128,7 +129,7 @@ export const GameDetails: React.FC = () => {
                                 ? "bg-primary/20 text-primary" 
                                 : "bg-muted text-muted-foreground"
                         )}>
-                            {unlockedAchievements}/{achievements.length}
+                            {achievementCatalog.total === null ? `${achievementCatalog.unlocked} confirmed` : `${achievementCatalog.unlocked}/${achievementCatalog.total}`}
                         </span>
                     )}
                 </button>

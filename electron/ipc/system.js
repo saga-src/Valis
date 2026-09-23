@@ -7,6 +7,7 @@ import si from 'systeminformation';
 import { db, rawDb } from '../db/client.js';
 import { getProfileSyncStats } from '../db/queries.js';
 import { emitDataChange, withDataChangeSuppressed } from '../services/DataChangeBus.js';
+import { readRestoreResult, requestLocalRestore } from '../services/RestoreBootstrap.js';
 
 // Define all tables that contain user data.
 // ORDER MATTERS: Children (tables with foreign keys) must come before Parents.
@@ -28,7 +29,30 @@ const ALL_USER_TABLES = [
   'games'                 // Parent
 ];
 
-export function registerSystemHandlers() {
+export function registerSystemHandlers({ localBackupService, restartForRestore } = {}) {
+  ipcMain.handle('backup:list', () => {
+    try {
+      return { success: true, ...localBackupService.list(), restoreResult: readRestoreResult(app.getPath('userData')) };
+    } catch (error) {
+      return { success: false, files: [], directory: localBackupService?.directory || '', lastResult: null, error: error.message };
+    }
+  });
+
+  ipcMain.handle('backup:run', async () => localBackupService.runIfDue());
+
+  ipcMain.handle('backup:restore', async (_event, dateKey) => {
+    try {
+      if (!localBackupService.list().files.some((file) => file.dateKey === dateKey)) {
+        throw new Error('The selected backup is not available in the local history');
+      }
+      const result = requestLocalRestore(app.getPath('userData'), dateKey);
+      setTimeout(restartForRestore, 250);
+      return result;
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
   // Excel Import
   ipcMain.handle('excel:import-sessions', async () => {
     return await handleImportSessions();

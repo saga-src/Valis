@@ -1,69 +1,31 @@
-import { db } from '../client.js';
+import { db, rawDb } from '../client.js';
 import crypto from 'crypto';
+import { createSessionCoordinator } from './SessionCoordinatorCore.js';
 import { saveGameTags } from './tags.js';
 import { recalculatePlaytime } from './games.js';
 import { incrementUserStat } from './gamification.js';
 
+const coordinator = createSessionCoordinator(rawDb);
+
+export async function startSession(gameId, startTime, options) {
+  return coordinator.startSession(gameId, startTime, options);
+}
+
 export async function createSession(gameId, startTime) {
-  const id = crypto.randomUUID();
-  await db.insertInto('sessions')
-    .values({
-      id,
-      game_id: String(gameId),
-      start_time: startTime,
-      end_time: 0,
-      duration_seconds: 0,
-      mood: '🙂',
-      notes: '[]',
-      journal_text: ''
-    })
-    .execute();
-  return id;
+  return (await startSession(gameId, startTime)).sessionId;
 }
 
-export async function endSession(sessionId, dataOrEndTime = Date.now()) {
-  const session = await db.selectFrom('sessions')
-    .select(['start_time', 'game_id'])
-    .where('id', '=', sessionId)
-    .executeTakeFirst();
-
-  if (session) {
-    let endTime = Date.now();
-    let updateFields = {};
-
-    if (typeof dataOrEndTime === 'number') {
-      endTime = dataOrEndTime;
-    } else if (dataOrEndTime && typeof dataOrEndTime === 'object') {
-      const { mood, notes, journal, platform_id, end_time } = dataOrEndTime;
-      endTime = end_time || Date.now();
-      updateFields = { mood, notes, journal_text: journal, platform_id };
-      if (notes) await saveGameTags(session.game_id, notes);
-    }
-
-    const duration = Math.max(0, Math.round((endTime - session.start_time) / 1000));
-    
-    await db.updateTable('sessions')
-      .set({ ...updateFields, end_time: endTime, duration_seconds: duration })
-      .where('id', '=', sessionId)
-      .execute();
-      
-    await recalculatePlaytime(session.game_id);
-
-    // ⚡ VETERAN TRIGGER: Increment post-game sessions if game is Beat or Completed
-    const game = await db.selectFrom('library').select('status').where('game_id', '=', session.game_id).executeTakeFirst();
-    if (game && (game.status === 'Beat' || game.status === 'Completed')) {
-        await incrementUserStat('veteran_sessions', 1);
-    }
-
-    return await db.selectFrom('sessions')
-      .selectAll()
-      .where('id', '=', sessionId)
-      .executeTakeFirst();
-  }
-
-  return null;
+export async function endSession(sessionId, dataOrEndTime) {
+  return coordinator.endSession(sessionId, dataOrEndTime);
 }
 
+export async function getActiveSession() {
+  return coordinator.getActiveSession();
+}
+
+export async function saveSessionDraft(sessionId, details) {
+  return coordinator.saveSessionDraft(sessionId, details);
+}
 export async function addManualSession(sessionData) {
     const { gameId, startTime, durationSeconds, notes, mood, journal, platformId, platform } = sessionData;
     const id = crypto.randomUUID();
@@ -172,7 +134,7 @@ export async function getOpenSession(gameId) {
     return await db.selectFrom('sessions')
         .selectAll()
         .where('game_id', '=', String(gameId))
-        .where('end_time', '=', 0)
+        .where((eb) => eb.or([eb('end_time', '=', 0), eb('end_time', 'is', null)]))
         .orderBy('start_time', 'desc')
         .executeTakeFirst();
 }

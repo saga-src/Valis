@@ -13,7 +13,7 @@ import { useDirectMessageUnread } from '../../context/DirectMessageUnreadContext
 
 export const Sidebar: React.FC = () => {
   const location = useLocation();
-  const { activeSession, elapsed, stopTimer } = useSessionManager();
+  const { activeSession, elapsed, stopTimer, isBusy, sessionError } = useSessionManager();
   const { reportSignal } = useMarkObserver();
   const { totalUnread } = useDirectMessageUnread();
 
@@ -125,10 +125,12 @@ export const Sidebar: React.FC = () => {
             </div>
             <button 
                 onClick={() => stopTimer()}
+                disabled={isBusy}
                 className="w-full py-1.5 bg-destructive/20 hover:bg-destructive text-destructive hover:text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-destructive/30"
             >
                 <Square size={10} fill="currentColor" /> Stop
             </button>
+            {sessionError && <p role="alert" className="mt-2 text-[10px] text-destructive">{sessionError}</p>}
         </div>
       )}
 

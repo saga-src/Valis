@@ -167,6 +167,30 @@ class CloudGate {
       return response.data;
     });
   }
+
+  /** Exchanges an OAuth code and returns only a sanitized WoW Retail snapshot. */
+  async fetchBlizzardWowSnapshot({ code, redirectUri, region }) {
+    if (!this.SUPABASE_URL || !this.SUPABASE_ANON_KEY) {
+      const error = new Error('Supabase proxy configuration is missing.');
+      error.code = 'BLIZZARD_BACKEND_NOT_CONFIGURED';
+      throw error;
+    }
+    return this.enqueue(async () => {
+      const response = await axios.post(
+        `${this.SUPABASE_URL}/functions/v1/valis-proxy/blizzard/identity`,
+        { code, redirectUri, region },
+        {
+          timeout: 130_000,
+          headers: {
+            Authorization: `Bearer ${this.SUPABASE_ANON_KEY}`,
+            apikey: this.SUPABASE_ANON_KEY,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      return response.data;
+    });
+  }
 }
 
 export const cloudGate = new CloudGate();

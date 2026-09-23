@@ -41,6 +41,7 @@ export const useRadarData = (library: any[]) => {
                         CUSTOM_PLATFORMS.GOG,
                         CUSTOM_PLATFORMS.XBOX_PC,
                         CUSTOM_PLATFORMS.STANDALONE,
+                        CUSTOM_PLATFORMS.BATTLE_NET,
                         CUSTOM_PLATFORMS.STEAM_TOOLS,
                         CUSTOM_PLATFORMS.UNOFFICIAL
                     ];

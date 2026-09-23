@@ -164,14 +164,28 @@ export function registerSettingsHandlers() {
         return result;
     });
 
-    // Battle.net / Blizzard Authentication (identity linking only)
-    ipcMain.handle('auth:blizzard', async () => {
-        const result = await blizzardAuth.login();
-        if (result?.success) emitDataChange({ type: 'account', source: 'auth:blizzard', important: true });
+    // Battle.net OAuth also imports the authorized account's WoW Retail profile.
+    ipcMain.handle('auth:blizzard', async (_, options) => {
+        const result = await blizzardAuth.login(options);
+        if (result?.success) {
+            emitDataChange({ type: 'account', source: 'auth:blizzard', important: true });
+            if (result.gameId) {
+                emitDataChange({ type: 'library', source: 'auth:blizzard', gameId: result.gameId, important: true });
+                emitDataChange({ type: 'achievement', source: 'auth:blizzard', gameId: result.gameId, important: true });
+            }
+        }
         return result;
     });
 
     ipcMain.handle('auth:blizzard-cancel', async () => blizzardAuth.cancel());
+    ipcMain.handle('auth:blizzard-select-game', async (_, selection) => {
+        const result = await blizzardAuth.selectGame(selection);
+        if (result?.success && result.gameId) {
+            emitDataChange({ type: 'library', source: 'auth:blizzard-select-game', gameId: result.gameId, important: true });
+            emitDataChange({ type: 'achievement', source: 'auth:blizzard-select-game', gameId: result.gameId, important: true });
+        }
+        return result;
+    });
 
     // Xbox Authentication (Link Only)
     ipcMain.handle('auth:xbox', async (event) => {

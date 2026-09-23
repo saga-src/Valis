@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut, Tray, Menu, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, globalShortcut, Tray, Menu, nativeImage, powerMonitor } from 'electron';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -18,6 +18,9 @@ import { achievementWatcher } from './services/FileWatcherService.js';
 import { steamAutoAchievementSync } from './services/SteamAutoAchievementSyncService.js';
 import { getSetting } from './db/modules/settings.js';
 import { appSessionLog } from './services/AppSessionLogService.js';
+import { LocalBackupService } from './services/LocalBackupService.js';
+import { rawDb } from './db/client.js';
+import { confirmRestoredBoot } from './services/RestoreBootstrap.js';
 import * as igdb from './lib/igdb.js';
 import fs from 'fs';
 
@@ -34,9 +37,10 @@ let proxyProcess;
 let tray = null;
 let isQuitting = false;
 let forceQuit = false;
+let localBackupService;
 
 // --- SINGLE INSTANCE LOCK ---
-const gotTheLock = app.requestSingleInstanceLock();
+const gotTheLock = app.hasSingleInstanceLock();
 
 if (!gotTheLock) {
   app.quit();
@@ -93,14 +97,15 @@ if (!gotTheLock) {
     achievementWatcher.init(mainWindow);
 
     // ⚡️ NEW UNIFIED LOADING LOGIC
+    let windowLoad;
     if (process.env.VITE_DEV_SERVER_URL) {
       // In Dev: Load the URL provided by the Vite plugin
-      mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+      windowLoad = mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
       //mainWindow.webContents.openDevTools();
     } else {
       // In Prod: Load the index.html from the dist folder
       // Path: dist-electron/main/ -> ../../dist/index.html
-      mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
+      windowLoad = mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
 
       //mainWindow.webContents.openDevTools(); 
     }
@@ -108,6 +113,7 @@ if (!gotTheLock) {
     mainWindow.on('closed', () => {
       mainWindow = null;
     });
+    return windowLoad;
   }
 
   function createTray() {
@@ -266,6 +272,9 @@ if (!gotTheLock) {
 
     await initDB();
 
+    localBackupService = new LocalBackupService({ rawDb, userDataPath: app.getPath('userData'), powerMonitor });
+    localBackupService.start();
+
     // Updated to point to services folder and pass userData path for DB access
     // In production/unified build, the proxy is a sibling file
     const proxyPath = app.isPackaged || process.env.VITE_DEV_SERVER_URL
@@ -277,13 +286,23 @@ if (!gotTheLock) {
       env: { ...process.env, USER_DATA_PATH: app.getPath('userData') }
     });
 
-    createWindow();
+    const initialWindowLoad = createWindow();
     createTray();
     setupAutoUpdater();
 
     registerGameHandlers();
     registerSessionHandlers();
-    registerSystemHandlers();
+    registerSystemHandlers({ localBackupService, restartForRestore: () => {
+      isQuitting = true;
+      forceQuit = true;
+      localBackupService?.stop();
+      gameWatcher.stop();
+      achievementWatcher.close();
+      steamAutoAchievementSync.stop();
+      proxyProcess?.kill();
+      app.relaunch();
+      app.quit();
+    } });
     setupAchievementsHandlers(mainWindow);
     registerSettingsHandlers();
     registerGamificationHandlers(); 
@@ -299,6 +318,9 @@ if (!gotTheLock) {
     // Initial check
     autoUpdater.checkForUpdates();
 
+    await initialWindowLoad;
+    confirmRestoredBoot(app.getPath('userData'));
+
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         createWindow();
@@ -306,9 +328,13 @@ if (!gotTheLock) {
         mainWindow?.show();
       }
     });
+  }).catch((error) => {
+    console.error('[Main] Startup failed:', error);
+    app.exit(1);
   });
 
   app.on('will-quit', () => {
+    localBackupService?.stop();
     steamAutoAchievementSync.stop();
     achievementWatcher.close();
     gameWatcher.stop();

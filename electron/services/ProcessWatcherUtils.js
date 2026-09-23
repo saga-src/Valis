@@ -18,6 +18,15 @@ export function groupTargetsByExecutable(games) {
   return grouped;
 }
 
+// A process that was already running before a game switch must not reopen the
+// session it just lost. A new PID (or a process disappearing and returning)
+// represents a new launch.
+export function shouldStartObservedProcess({ hasScanned, previousPid, currentPid, hasActive, persistedGameId, gameId }) {
+  if (hasActive) return false;
+  if (!hasScanned && persistedGameId && persistedGameId !== gameId) return false;
+  return previousPid !== currentPid || persistedGameId === gameId;
+}
+
 export function calculateScanStats(samples) {
   if (!samples.length) return { averageMs: 0, p95Ms: 0 };
   const sorted = [...samples].sort((a, b) => a - b);

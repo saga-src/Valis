@@ -62,7 +62,8 @@ export const useSessionManager = () => {
 
     const saved = await store.stopTimer(endTime);
 
-    if (!saved) return;
+    // Only the first persisted transition earns XP or sends social/cloud events.
+    if (saved !== 'finished') return;
 
     void (async () => {
         let xpEarned = Math.floor((durationSeconds / 60) * 0.2);

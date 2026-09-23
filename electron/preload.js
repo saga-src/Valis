@@ -31,8 +31,10 @@ contextBridge.exposeInMainWorld('api', {
   getSessionsPage: (options) => ipcRenderer.invoke('session:get-page', options),
   getRecentSessions: (days) => ipcRenderer.invoke('session:get-recent', days),
   saveSession: (session) => ipcRenderer.invoke('db:save-session', session),
-  startSession: (gameId, startTime) => ipcRenderer.invoke('session:start', { gameId, startTime }),
+  startSession: (gameId, startTime, options = {}) => ipcRenderer.invoke('session:start', { gameId, startTime, ...options }),
   endSession: (sessionId, data) => ipcRenderer.invoke('session:end', { sessionId, data }),
+  getActiveSession: () => ipcRenderer.invoke('session:get-active'),
+  saveSessionDraft: (sessionId, data) => ipcRenderer.invoke('session:save-draft', { sessionId, data }),
   
   // Session Management
   addManualSession: (data) => ipcRenderer.invoke('session:add-manual', data),
@@ -105,6 +107,9 @@ contextBridge.exposeInMainWorld('api', {
   restoreBackup: (data) => ipcRenderer.invoke('system:restore-backup', data),
   getDatabaseDump: () => ipcRenderer.invoke('system:get-database-dump'),
   getDatabaseFile: () => ipcRenderer.invoke('get-database-file'),
+  listLocalBackups: () => ipcRenderer.invoke('backup:list'),
+  runLocalBackup: () => ipcRenderer.invoke('backup:run'),
+  restoreLocalBackup: (dateKey) => ipcRenderer.invoke('backup:restore', dateKey),
 
   // Excel
   importSessionsExcel: () => ipcRenderer.invoke('excel:import-sessions'),
@@ -129,8 +134,9 @@ contextBridge.exposeInMainWorld('api', {
   // Auth
   authSteam: () => ipcRenderer.invoke('auth:steam'),
   authEpic: () => ipcRenderer.invoke('auth:epic'),
-  authBlizzard: () => ipcRenderer.invoke('auth:blizzard'),
+  authBlizzard: (options) => ipcRenderer.invoke('auth:blizzard', options),
   cancelBlizzardAuth: () => ipcRenderer.invoke('auth:blizzard-cancel'),
+  selectBlizzardWowGame: (selection) => ipcRenderer.invoke('auth:blizzard-select-game', selection),
   authPsn: (npsso) => ipcRenderer.invoke('auth:psn', npsso),
   authXbox: () => ipcRenderer.invoke('auth:xbox'),
   getSteamUser: () => ipcRenderer.invoke('auth:get-steam-user'),

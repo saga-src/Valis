@@ -49,6 +49,29 @@ export interface GameLaunchResult {
   error?: string;
 }
 
+export interface LocalBackupFile {
+  dateKey: string;
+  size: number;
+  createdAt: number;
+}
+
+export interface LocalBackupResult {
+  success: boolean;
+  status: 'created' | 'already-backed-up' | 'error';
+  dateKey: string;
+  at?: number;
+  error?: string;
+}
+
+export interface LocalBackupList {
+  success: boolean;
+  files: LocalBackupFile[];
+  directory: string;
+  lastResult: LocalBackupResult | null;
+  error?: string;
+  restoreResult?: { status: 'restored' | 'recovered' | 'error'; message: string; at: number } | null;
+}
+
 export interface EpicSyncFailure {
   sourceId?: string;
   title?: string;
@@ -66,6 +89,21 @@ export interface EpicSyncResult {
   achievementsUnlocked: number;
   skipped: number;
   failures: EpicSyncFailure[];
+}
+
+export interface BlizzardSyncResult {
+  success: boolean;
+  status: 'complete' | 'partial' | 'empty' | 'needs-selection' | 'cancelled' | 'timeout' | 'pending' | 'configuration-required' | 'error';
+  code?: string;
+  message?: string;
+  region?: 'us' | 'eu' | 'kr' | 'tw';
+  account?: { externalId: string; username: string };
+  gameId?: string;
+  characters?: number;
+  achievements?: number;
+  failures?: number;
+  pendingId?: string;
+  candidates?: Array<{ id: string; name: string }>;
 }
 
 export interface LibrarySyncProgress {
@@ -111,10 +149,12 @@ export interface StorageApi {
   selectExecutable: () => Promise<string | null>;
   updateWatcherSettings: (settings: { enabled: boolean; interval: number }) => Promise<boolean>;
   getWatcherHealth: () => Promise<{ enabled: boolean; interval: number; loopsActive: number; scans: number; failures: number; overlapsPrevented: number; targetQueries: number; averageMs: number; p95Ms: number }>;
-  onSessionStarted: (callback: (data: { gameId: string; startTime: number; sessionId?: string }) => void) => () => void;
-  onSessionEnded: (callback: (data: { gameId: string; duration: number }) => void) => () => void;
-  startSession: (gameId: string, startTime: number) => Promise<{ success: boolean; sessionId?: string; error?: string }>;
-  endSession: (sessionId: string, data: any) => Promise<{ success: boolean; session?: any; error?: string }>;
+  onSessionStarted: (callback: (data: { gameId: string; startTime: number; sessionId: string; finalizedSessionIds?: string[] }) => void) => () => void;
+  onSessionEnded: (callback: (data: { gameId: string; sessionId: string; duration: number }) => void) => () => void;
+  startSession: (gameId: string, startTime: number, options?: { previousSessionId?: string; previousData?: any }) => Promise<{ success: boolean; sessionId?: string; startTime?: number; reused?: boolean; error?: string }>;
+  endSession: (sessionId: string, data: any) => Promise<{ success: boolean; status?: 'finished' | 'already-finished'; session?: any; error?: string }>;
+  getActiveSession: () => Promise<{ id: string; game_id: string; start_time: number } | null>;
+  saveSessionDraft: (sessionId: string, data: any) => Promise<{ success: boolean; session?: any; error?: string }>;
   
   // Manual Session Management
   addManualSession: (data: any) => Promise<{ success: boolean; sessionId?: string }>;
@@ -178,8 +218,9 @@ export interface StorageApi {
   // Auth
   authSteam: () => Promise<{ success: boolean; steamId?: string; message?: string }>;
   authEpic: () => Promise<{ success: boolean; message?: string }>;
-  authBlizzard: () => Promise<{ success: boolean; status: string; code?: string; message?: string; account?: { externalId: string; username: string } }>;
+  authBlizzard: (options?: { region?: 'us' | 'eu' | 'kr' | 'tw' }) => Promise<BlizzardSyncResult>;
   cancelBlizzardAuth: () => Promise<{ success: boolean; status: string; code?: string }>;
+  selectBlizzardWowGame: (selection: { pendingId: string; gameId: string | null }) => Promise<BlizzardSyncResult>;
   authPsn: (npsso) => Promise<{ success: boolean; message?: string }>;
   authXbox: () => Promise<{ success: boolean; username?: string; error?: string }>;
   getSteamUser: () => Promise<{ steamId?: string }>;
@@ -227,6 +268,9 @@ export interface StorageApi {
   restoreBackup: (data: any) => Promise<{ success: boolean; error?: string }>;
   getDatabaseDump: () => Promise<{ data: any }>;
   getDatabaseFile: () => Promise<Uint8Array>;
+  listLocalBackups: () => Promise<LocalBackupList>;
+  runLocalBackup: () => Promise<LocalBackupResult>;
+  restoreLocalBackup: (dateKey: string) => Promise<{ success: boolean; dateKey?: string; error?: string }>;
 
   // Safe Exit Handshake
   onAppClosing: (callback: () => void) => () => void;

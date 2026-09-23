@@ -36,6 +36,8 @@ export const SessionControlPanel: React.FC<SessionControlPanelProps> = ({ game, 
     activeSession, 
     startTimer,
     stopTimer,
+    isBusy,
+    sessionError,
     draft, 
     setDraftPlatform, 
     setDraftMood, 
@@ -314,6 +316,7 @@ export const SessionControlPanel: React.FC<SessionControlPanelProps> = ({ game, 
         {!isSessionActive ? (
             <button
                 onClick={handleStart}
+                disabled={isBusy}
                 className="w-full py-4 bg-primary text-primary-foreground text-lg font-black rounded-xl hover:opacity-90 active:scale-[0.98] transition-all shadow-lg flex items-center justify-center gap-2 group"
             >
                 <Play fill="currentColor" className="group-hover:scale-110 transition-transform" />
@@ -323,6 +326,7 @@ export const SessionControlPanel: React.FC<SessionControlPanelProps> = ({ game, 
             <div className="flex gap-3">
                 <button
                     onClick={() => stopTimer()}
+                    disabled={isBusy}
                     className="flex-1 py-3 bg-destructive text-destructive-foreground font-bold rounded-xl hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-lg"
                 >
                     <Square size={18} fill="currentColor" />
@@ -336,6 +340,7 @@ export const SessionControlPanel: React.FC<SessionControlPanelProps> = ({ game, 
                 </button>
             </div>
         )}
+        {sessionError && <p role="alert" className="mt-2 text-xs text-destructive">{sessionError}</p>}
       </div>
     </div>
   );

@@ -66,5 +66,7 @@ supabase/functions/*/deno.lock
 
 .old_dbs/
 .agents/
+.codex/
 .claude/
 tests/
+.smoke-valis-140/

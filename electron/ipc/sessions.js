@@ -5,31 +5,45 @@ import { rawDb, db } from '../db/client.js';
 import { emitDataChange } from '../services/DataChangeBus.js';
 
 export function registerSessionHandlers() {
-  ipcMain.handle('session:start', async (event, { gameId, startTime }) => {
-    const id = await dbActions.createSession(gameId, startTime);
-    emitDataChange({ type: 'session', source: 'session:start', gameId, sessionId: id, important: true });
-    return { success: true, sessionId: id };
+  ipcMain.handle('session:start', async (event, { gameId, startTime, previousSessionId, previousData }) => {
+    const result = await dbActions.startSession(gameId, startTime, { previousSessionId, previousData });
+    for (const session of result.finalizedSessions) {
+      emitDataChange({ type: 'session', source: 'session:switch', gameId: session.game_id, sessionId: session.id, important: true });
+    }
+    if (!result.reused) {
+      emitDataChange({ type: 'session', source: 'session:start', gameId, sessionId: result.sessionId, important: true });
+    }
+    return { success: true, ...result };
   });
 
   ipcMain.handle('session:stop', async (event, { sessionId }) => {
-    const session = await db.selectFrom('sessions').select('game_id').where('id', '=', sessionId).executeTakeFirst();
-    const finalizedSession = await dbActions.endSession(sessionId);
-    if (!finalizedSession) {
+    const result = await dbActions.endSession(sessionId);
+    if (result.status === 'not-found') {
       return { success: false, error: 'Session not found' };
     }
-    emitDataChange({ type: 'session', source: 'session:stop', gameId: session?.game_id, sessionId, important: true });
-    return { success: true, session: finalizedSession };
+    if (result.status === 'finished') {
+      emitDataChange({ type: 'session', source: 'session:stop', gameId: result.session.game_id, sessionId, important: true });
+    }
+    return { success: true, ...result };
   });
 
   // Also handle the legacy channel if main.js logic is being migrated fully here
   ipcMain.handle('session:end', async (event, { sessionId, data }) => {
-    const session = await db.selectFrom('sessions').select('game_id').where('id', '=', sessionId).executeTakeFirst();
-    const finalizedSession = await dbActions.endSession(sessionId, data);
-    if (!finalizedSession) {
+    const result = await dbActions.endSession(sessionId, data);
+    if (result.status === 'not-found') {
       return { success: false, error: 'Session not found' };
     }
-    emitDataChange({ type: 'session', source: 'session:end', gameId: session?.game_id, sessionId, important: true });
-    return { success: true, session: finalizedSession };
+    if (result.status === 'finished') {
+      emitDataChange({ type: 'session', source: 'session:end', gameId: result.session.game_id, sessionId, important: true });
+    }
+    return { success: true, ...result };
+  });
+
+  ipcMain.handle('session:get-active', () => dbActions.getActiveSession());
+
+  ipcMain.handle('session:save-draft', async (event, { sessionId, data }) => {
+    const session = await dbActions.saveSessionDraft(sessionId, data);
+    return session ? { success: true, session } : { success: false, error: 'Session not found' };
   });
 
   ipcMain.handle('db:get-sessions', async (event, gameId) => {

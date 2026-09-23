@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Trophy, Lock, Search, Clock, RefreshCw, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { cn } from '../../../lib/utils/cn';
 import { useManualAchievementSync } from '../hooks/useManualAchievementSync';
+import { getAchievementCatalogDisplay } from '../achievementCatalog';
 
 interface AchievementsTabProps {
   game: any;
@@ -92,8 +93,8 @@ export const AchievementsTab = ({ game, achievements, loading, onRefresh }: Achi
     return matchesSearch && matchesStatus;
   });
 
-  const unlockedCount = achievements.filter(a => a.unlockedAt || a.defaultUnlocked).length;
-  const percentage = Math.round((unlockedCount / achievements.length) * 100) || 0;
+  const { unlocked: unlockedCount, total, percentage } = getAchievementCatalogDisplay(achievements);
+  const wowCatalogTotalUnknown = total === null;
 
   return (
     <div className="space-y-6 h-full flex flex-col">
@@ -105,13 +106,16 @@ export const AchievementsTab = ({ game, achievements, loading, onRefresh }: Achi
             Achievements
           </h3>
           <div className="flex items-center gap-3">
-             <div className="h-3 w-48 bg-muted rounded-full overflow-hidden relative">
-                 <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${percentage}%` }} />
-             </div>
+             {percentage !== null && (
+               <div className="h-3 w-48 bg-muted rounded-full overflow-hidden relative">
+                   <div className="h-full bg-primary transition-all duration-1000" style={{ width: `${percentage}%` }} />
+               </div>
+             )}
              <p className="text-xs font-bold text-muted-foreground">
-                {unlockedCount} / {achievements.length} ({percentage}%)
+                {wowCatalogTotalUnknown ? `${unlockedCount} confirmed · total unknown` : `${unlockedCount} / ${achievements.length} (${percentage}%)`}
              </p>
           </div>
+          {wowCatalogTotalUnknown && <p className="text-xs text-muted-foreground">Battle.net provides confirmed unlocks, so the full WoW achievement total is not available here.</p>}
         </div>
 
         {/* Controls */}

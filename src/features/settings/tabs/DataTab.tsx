@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Database, FileSpreadsheet, Trash2, AlertCircle, RefreshCw, Archive, RotateCcw, Trophy } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Database, FileSpreadsheet, Trash2, AlertCircle, RefreshCw, Archive, RotateCcw, Trophy, FolderOpen } from 'lucide-react';
+import type { LocalBackupList } from '../../../types/electron';
 import { useToast } from '../../../context/ToastContext';
 import ConfirmationModal from '../../../components/ui/ConfirmationModal';
 import Modal from '../../../components/ui/Modal';
@@ -11,11 +12,51 @@ export const DataTab = () => {
   const { reportSignal } = useMarkObserver();
   
   const [loading, setLoading] = useState(false);
-  const [activeModal, setActiveModal] = useState<'reset' | 'import' | 'success' | null>(null);
+  const [activeModal, setActiveModal] = useState<'reset' | 'import' | 'success' | 'restore' | null>(null);
   const [refreshStatus, setRefreshStatus] = useState({ current: 0, total: 0, name: '' });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [achRefreshStatus, setAchRefreshStatus] = useState({ current: 0, total: 0, name: '' });
   const [isAchRefreshing, setIsAchRefreshing] = useState(false);
+  const [backups, setBackups] = useState<LocalBackupList | null>(null);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [restoreDateKey, setRestoreDateKey] = useState<string | null>(null);
+  const [restoreBusy, setRestoreBusy] = useState(false);
+
+  const refreshBackups = async () => {
+    try { setBackups(await window.api.listLocalBackups()); }
+    catch (error) { toast.error(error instanceof Error ? error.message : 'Could not list backups'); }
+  };
+
+  useEffect(() => { void refreshBackups(); }, []);
+
+  const handleBackupNow = async () => {
+    setBackupBusy(true);
+    try {
+      const result = await window.api.runLocalBackup();
+      if (result.success) toast.success(result.status === 'created' ? 'Database backup created' : 'Today\'s backup already exists');
+      else toast.error(result.error || 'Backup failed');
+      await refreshBackups();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Backup failed');
+    } finally { setBackupBusy(false); }
+  };
+
+  const handleRestoreFile = async () => {
+    if (!restoreDateKey) return;
+    setRestoreBusy(true);
+    try {
+      const result = await window.api.restoreLocalBackup(restoreDateKey);
+      if (!result.success) {
+        toast.error(result.error || 'Restore request failed');
+        setActiveModal(null);
+      } else {
+        toast.info('Validated backup. Valis is restarting to restore it.');
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Restore request failed');
+      setActiveModal(null);
+    } finally { setRestoreBusy(false); }
+  };
 
   const handleAction = async (action: () => Promise<any>, successMsg: string) => {
     setLoading(true);
@@ -89,6 +130,40 @@ export const DataTab = () => {
       {/* Maintenance */}
       <div className="p-6 border rounded-xl bg-card transition-all hover:shadow-md">
         <h2 className="text-lg font-semibold mb-6 flex items-center gap-2"><Database size={20} className="text-primary" /> Backups</h2>
+
+        <div className="mb-6 rounded-lg border border-border/70 bg-muted/30 p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-bold text-sm">Daily database files</p>
+              <p className="text-xs text-muted-foreground">Automatically saved when Valis opens and at 03:00 while it is running. The seven newest daily files are kept.</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => void refreshBackups()} className="px-3 py-2 border rounded-lg text-xs font-bold hover:bg-muted">Refresh</button>
+              <button onClick={() => void handleBackupNow()} disabled={backupBusy} className="px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-bold disabled:opacity-50">{backupBusy ? 'Saving…' : 'Back up now'}</button>
+            </div>
+          </div>
+          {backups?.lastResult && (
+            <p className={`text-xs ${backups.lastResult.success ? 'text-emerald-600' : 'text-destructive'}`}>
+              {backups.lastResult.success ? `Latest backup: ${backups.lastResult.dateKey}` : `Backup failed: ${backups.lastResult.error || 'Unknown error'}`}
+            </p>
+          )}
+          {backups?.restoreResult && <p className={`text-xs ${backups.restoreResult.status === 'restored' ? 'text-emerald-600' : 'text-destructive'}`}>
+            {backups.restoreResult.message}
+          </p>}
+          {backups?.error && <p className="text-xs text-destructive">{backups.error}</p>}
+          {backups && <div className="flex items-center gap-2 min-w-0 text-xs text-muted-foreground">
+            <button onClick={() => void window.api.openExplorer(backups.directory)} title="Show backup folder" className="shrink-0 hover:text-foreground"><FolderOpen size={16} /></button>
+            <span className="truncate" title={backups.directory}>{backups.directory}</span>
+          </div>}
+          {backups && (backups.files.length ? (
+            <ul className="divide-y divide-border/50 text-sm">
+              {backups.files.map((file) => <li key={file.dateKey} className="flex items-center justify-between gap-3 py-2">
+                <span>{file.dateKey}</span><span className="ml-auto text-muted-foreground">{(file.size / (1024 * 1024)).toFixed(1)} MB</span>
+                <button onClick={() => { setRestoreDateKey(file.dateKey); setActiveModal('restore'); }} className="px-2 py-1 border rounded text-xs font-bold hover:bg-muted">Restore</button>
+              </li>)}
+            </ul>
+          ) : <p className="text-xs text-muted-foreground">No completed daily backup yet.</p>)}
+        </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-6">
             <div className="space-y-3">
@@ -153,6 +228,7 @@ export const DataTab = () => {
       {/* Modals */}
       <FactoryResetModal isOpen={activeModal === 'reset'} onClose={() => setActiveModal(null)} />
       <ConfirmationModal isOpen={activeModal === 'import'} onClose={() => setActiveModal(null)} onConfirm={() => handleAction(window.api.importData, 'Restore Complete')} title="Restore Backup" message="Overwrite current library?" confirmText="Restore" isDanger />
+      <ConfirmationModal isOpen={activeModal === 'restore'} onClose={() => { if (!restoreBusy) setActiveModal(null); }} onConfirm={() => void handleRestoreFile()} title="Restore database file" message={`Replace the current local database with the ${restoreDateKey || ''} backup? Valis will restart. Your current database is held for rollback until startup succeeds.`} confirmText="Restore and restart" isDanger isLoading={restoreBusy} />
       
       <Modal isOpen={activeModal === 'success'} onClose={() => window.location.reload()} title="Complete">
         <div className="text-center p-4">

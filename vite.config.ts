@@ -20,7 +20,7 @@ export default defineConfig(({ mode }) => {
         electron({
           main: {
             entry: {
-              main: 'electron/main.js',
+              main: 'electron/bootstrap.js',
               ProxyServer: 'electron/services/ProxyServer.js', 
             },
             vite: {

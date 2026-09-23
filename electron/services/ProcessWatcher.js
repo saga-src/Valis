@@ -3,7 +3,8 @@ import path from 'path';
 import { spawn } from 'child_process';
 import * as db from '../db/queries.js';
 import { sessionLifecycle } from './SessionLifecycleService.js';
-import { calculateScanStats, groupTargetsByExecutable, sanitizeWatcherInterval } from './ProcessWatcherUtils.js';
+import { emitDataChange } from './DataChangeBus.js';
+import { calculateScanStats, groupTargetsByExecutable, sanitizeWatcherInterval, shouldStartObservedProcess } from './ProcessWatcherUtils.js';
 
 const getBinaryPath = () => app.isPackaged
   ? path.join(process.resourcesPath, 'bin', 'fastlist.exe')
@@ -50,6 +51,8 @@ export class GameWatcher {
   constructor(deps = {}) {
     this.deps = { db, scanProcesses: getProcessList, now: () => Date.now(), ...deps };
     this.activeSessions = new Map();
+    this.observedProcesses = new Map();
+    this.hasScanned = false;
     this.launchHints = new Map();
     this.isRunning = false;
     this.window = null;
@@ -77,7 +80,11 @@ export class GameWatcher {
     this.generation++;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
-    if (!preserveSessions) this.activeSessions.clear();
+    if (!preserveSessions) {
+      this.activeSessions.clear();
+      this.observedProcesses.clear();
+      this.hasScanned = false;
+    }
   }
 
   invalidateTargets() {
@@ -107,6 +114,9 @@ export class GameWatcher {
     this.scanInProgress = true;
     try {
       await this.check(generation);
+    } catch (error) {
+      this.health.failures++;
+      console.error('[GameWatcher] Session scan failed:', error);
     } finally {
       this.scanInProgress = false;
       this.schedule(this.interval, generation);
@@ -147,6 +157,11 @@ export class GameWatcher {
     }
 
     for (const [gameId, session] of this.activeSessions) {
+      const persisted = await this.deps.db.getOpenSession(gameId);
+      if (persisted?.id !== session.id) {
+        this.activeSessions.delete(gameId);
+        continue;
+      }
       const matches = processByName.get(path.basename(session.executable).toLowerCase()) || [];
       const running = session.pid ? matches.some((item) => item.pid === session.pid) : matches.length > 0;
       session.missingScans = running ? 0 : (session.missingScans || 0) + 1;
@@ -154,35 +169,66 @@ export class GameWatcher {
     }
 
     const grouped = groupTargetsByExecutable(trackableGames);
+    const persistedActive = await this.deps.db.getActiveSession();
+    const nextObserved = new Map();
     for (const [basename, games] of grouped) {
       const processes = processByName.get(basename) || [];
       if (!processes.length) continue;
       if (games.length > 1) {
         for (const game of games) {
           const hint = this.launchHints.get(String(game.id));
-          if (hint && processes.some((item) => item.pid === hint.pid) && !this.activeSessions.has(String(game.id))) {
+          if (!hint || !processes.some((item) => item.pid === hint.pid)) continue;
+          nextObserved.set(String(game.id), hint.pid);
+          if (shouldStartObservedProcess({
+            hasScanned: this.hasScanned,
+            previousPid: this.observedProcesses.get(String(game.id)),
+            currentPid: hint.pid,
+            hasActive: this.activeSessions.has(String(game.id)),
+            persistedGameId: persistedActive?.game_id,
+            gameId: String(game.id)
+          })) {
             await this.startSession(game, hint.pid);
           }
         }
         continue;
       }
       const game = games[0];
-      if (!this.activeSessions.has(String(game.id))) {
-        await this.startSession(game, null);
+      const gameId = String(game.id);
+      const pid = processes[0].pid;
+      nextObserved.set(gameId, pid);
+      if (shouldStartObservedProcess({
+        hasScanned: this.hasScanned,
+        previousPid: this.observedProcesses.get(gameId),
+        currentPid: pid,
+        hasActive: this.activeSessions.has(gameId),
+        persistedGameId: persistedActive?.game_id,
+        gameId
+      })) {
+        await this.startSession(game, pid);
       }
     }
+    this.observedProcesses = nextObserved;
+    this.hasScanned = true;
   }
 
   async startSession(game, pid = null) {
     const gameId = String(game.id);
-    const existing = await this.deps.db.getOpenSession(gameId);
-    const startTime = existing?.start_time || this.deps.now();
-    const sessionId = existing?.id || await this.deps.db.createSession(gameId, startTime);
+    const result = await this.deps.db.startSession(gameId, this.deps.now());
+    const { sessionId, startTime, finalizedSessions, reused } = result;
+    for (const ended of finalizedSessions) {
+      const old = this.activeSessions.get(String(ended.game_id));
+      if (old?.id === ended.id) this.activeSessions.delete(String(ended.game_id));
+      emitDataChange({ type: 'session', source: 'watcher:switch', gameId: ended.game_id, sessionId: ended.id, important: true });
+      sessionLifecycle.sessionEnded({ ...old, id: ended.id, gameId: ended.game_id, endTime: ended.end_time, persisted: ended });
+    }
     const session = { id: sessionId, gameId, title: game.title || game.name, executable: game.executable, startTime, pid, missingScans: 0 };
     this.activeSessions.set(gameId, session);
-    sessionLifecycle.sessionStarted(session);
+    if (!reused) sessionLifecycle.sessionStarted(session);
     if (this.window && !this.window.isDestroyed()) {
-      this.window.webContents.send('watcher:session-started', { gameId, startTime, sessionId });
+      this.window.webContents.send('watcher:session-started', {
+        gameId, startTime, sessionId,
+        finalizedSessionIds: finalizedSessions.map((ended) => ended.id)
+      });
     }
   }
 
@@ -191,13 +237,15 @@ export class GameWatcher {
     const session = this.activeSessions.get(key);
     if (!session) return;
     const endTime = this.deps.now();
-    const ended = await this.deps.db.endSession(session.id, endTime);
+    const result = await this.deps.db.endSession(session.id, endTime);
     this.activeSessions.delete(key);
+    if (result.status !== 'finished') return;
     const durationSeconds = Math.max(0, Math.round((endTime - session.startTime) / 1000));
-    const event = { ...session, endTime, durationSeconds, persisted: ended };
+    const event = { ...session, endTime, durationSeconds, persisted: result.session };
+    emitDataChange({ type: 'session', source: 'watcher:end', gameId: key, sessionId: session.id, important: true });
     sessionLifecycle.sessionEnded(event);
     if (this.window && !this.window.isDestroyed()) {
-      this.window.webContents.send('watcher:session-ended', { gameId: key, duration: durationSeconds });
+      this.window.webContents.send('watcher:session-ended', { gameId: key, sessionId: session.id, duration: durationSeconds });
     }
   }
 

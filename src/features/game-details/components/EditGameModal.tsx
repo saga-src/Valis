@@ -38,6 +38,7 @@ const STATIC_PLATFORM_NAMES: Record<number, string> = {
   99003: 'GOG',
   99004: 'Xbox (PC)',
   99005: 'Standalone',
+  99007: 'Battle.net',
   130: 'Nintendo Switch',
   167: 'PlayStation 5',
   48: 'PlayStation 4',

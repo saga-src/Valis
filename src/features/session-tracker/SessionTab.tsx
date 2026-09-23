@@ -27,7 +27,7 @@ interface SessionTabProps {
 
 export const SessionTab = ({ gameId, gameTitle, ownedPlatformIds, availablePlatforms, sessions }: SessionTabProps) => {
   const { 
-    activeSession, elapsed, startTimer, stopTimer,
+    activeSession, elapsed, startTimer, stopTimer, isBusy, sessionError,
     draft, setDraftMood, setDraftPlatform, addDraftNote, removeDraftNote, setDraftJournal 
   } = useSessionManager();
   
@@ -114,14 +114,20 @@ export const SessionTab = ({ gameId, gameTitle, ownedPlatformIds, availablePlatf
                </div>
                <button 
                  onClick={() => stopTimer()}
+                 disabled={isBusy}
                  className="w-full py-3 bg-destructive text-destructive-foreground rounded-lg font-bold hover:opacity-90 transition-all"
                >
                  Stop & Save
                </button>
              </>
            ) : activeSession ? (
-             <div className="text-yellow-500 font-medium">
-               Timer running for another game!
+             <div className="space-y-3">
+               <div className="text-yellow-500 font-medium">Recording {activeSession.gameTitle}</div>
+               <button
+                 onClick={() => startTimer(String(gameId), gameTitle)}
+                 disabled={isBusy}
+                 className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-bold disabled:opacity-50"
+               >Save previous & start this game</button>
              </div>
            ) : (
              <>
@@ -153,12 +159,13 @@ export const SessionTab = ({ gameId, gameTitle, ownedPlatformIds, availablePlatf
                <button 
                  onClick={() => startTimer(String(gameId), gameTitle, undefined, draft.platformId)}
                  className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-bold hover:opacity-90 transition-all disabled:opacity-50"
-                 disabled={ownedPlatforms.length > 0 && !draft.platformId}
+                 disabled={isBusy || (ownedPlatforms.length > 0 && !draft.platformId)}
                >
                  Start Session
                </button>
              </>
            )}
+           {sessionError && <p role="alert" className="mt-2 text-xs text-destructive">{sessionError}</p>}
         </div>
 
         {/* Right: Session Details Form */}

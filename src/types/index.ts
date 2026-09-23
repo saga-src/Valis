@@ -36,6 +36,7 @@ export const CUSTOM_PLATFORMS = {
   XBOX_PC: 99004,
   STANDALONE: 99005,
   PSN: 99006,
+  BATTLE_NET: 99007,
   UNOFFICIAL: 99999,
   STEAM_TOOLS: 100000
 };
@@ -47,6 +48,7 @@ export const CUSTOM_PLATFORM_DATA: Record<number, Platform> = {
   [CUSTOM_PLATFORMS.XBOX_PC]: { id: CUSTOM_PLATFORMS.XBOX_PC, name: "Xbox App (PC)", abbreviation: "Xbox App" },
   [CUSTOM_PLATFORMS.STANDALONE]: { id: CUSTOM_PLATFORMS.STANDALONE, name: "Standalone / Launcher", abbreviation: "Standalone Launcher" },
   [CUSTOM_PLATFORMS.PSN]: { id: CUSTOM_PLATFORMS.PSN, name: "PlayStation Network", abbreviation: "PSN" },
+  [CUSTOM_PLATFORMS.BATTLE_NET]: { id: CUSTOM_PLATFORMS.BATTLE_NET, name: "Battle.net", abbreviation: "Battle.net" },
   [CUSTOM_PLATFORMS.UNOFFICIAL]: { id: CUSTOM_PLATFORMS.UNOFFICIAL, name: "Unofficial Copy", abbreviation: "Unofficial Copy" },
   [CUSTOM_PLATFORMS.STEAM_TOOLS]: { id: CUSTOM_PLATFORMS.STEAM_TOOLS, name: "SteamTools", abbreviation: "SteamTools" }
 };

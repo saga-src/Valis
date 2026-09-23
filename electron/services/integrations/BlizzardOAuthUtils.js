@@ -1,4 +1,10 @@
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+export const BLIZZARD_REGIONS = ['us', 'eu', 'kr', 'tw'];
+
+export function normalizeBlizzardRegion(value) {
+  const region = String(value || 'us').toLowerCase();
+  return BLIZZARD_REGIONS.includes(region) ? region : null;
+}
 
 export function validateBlizzardRedirectUri(value) {
   let url;
@@ -13,12 +19,14 @@ export function validateBlizzardRedirectUri(value) {
   return { valid: true, url };
 }
 
-export function buildBlizzardAuthorizeUrl({ clientId, redirectUri, state }) {
-  const url = new URL('https://oauth.battle.net/oauth/authorize');
+export function buildBlizzardAuthorizeUrl({ clientId, redirectUri, state, region = 'us' }) {
+  const selectedRegion = normalizeBlizzardRegion(region);
+  if (!selectedRegion) throw new Error('Unsupported Battle.net region');
+  const url = new URL(`https://${selectedRegion}.battle.net/oauth/authorize`);
   url.searchParams.set('client_id', clientId);
   url.searchParams.set('redirect_uri', redirectUri);
   url.searchParams.set('response_type', 'code');
-  url.searchParams.set('scope', 'openid');
+  url.searchParams.set('scope', 'openid wow.profile');
   url.searchParams.set('state', state);
   return url.toString();
 }

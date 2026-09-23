@@ -7,37 +7,19 @@ import { useMarkObserver } from '../gamification/hooks/useMarkObserver';
 
 export const useSessionSync = () => {
   const navigate = useNavigate();
-  const { startTimer, stopTimer } = useSessionStore();
+  const { startTimer, handlePersistedEnd, recoverActiveSession } = useSessionStore();
   const { reportSignal } = useMarkObserver();
 
   useEffect(() => {
+    void recoverActiveSession();
     // 1. Session Started
     const removeStartListener = onSessionStarted(async (data) => {
       console.log("%c[Frontend] ⚡ RECEIVED START SIGNAL", "color: green; font-weight: bold;", data);
       console.log('[Sync] Watcher started session:', data);
       
-      // ⚡ Report Signals for "The Overclocker" and "The Bottleneck"
-      // We check hardware stats immediately on launch
-      if (window.api && window.api.getSystemStats) {
-          try {
-              const stats = await window.api.getSystemStats();
-              // Pass stats payload to the rules engine
-              reportSignal('GAME_LAUNCH', { 
-                 ramUsage: stats.memUsed, 
-                 cpuLoad: stats.cpuLoad, 
-                 gpuLoad: stats.gpuLoad 
-              });
-          } catch(e) {
-              // Fallback simple signal
-              reportSignal('GAME_LAUNCH');
-          }
-      } else {
-          reportSignal('GAME_LAUNCH');
-      }
-      
       // GUARD: If we are already tracking this game manually, don't reset the timer.
       const { activeSession } = useSessionStore.getState();
-      if (activeSession && activeSession.gameId === data.gameId) {
+      if (activeSession?.sessionId === data.sessionId) {
         console.log('[Sync] Manual session already active. Ignoring watcher start signal.');
         return;
       }
@@ -49,7 +31,25 @@ export const useSessionSync = () => {
         const title = game ? game.title : 'Unknown Game';
         
         // Start the timer with the specific start time, cover, and sessionId provided by the watcher
-        startTimer(data.gameId, title, game?.cover_url, undefined, Number(data.startTime), data.sessionId);
+        const attached = await startTimer(data.gameId, title, game?.cover_url, undefined, Number(data.startTime), data.sessionId);
+        if (!attached) return;
+
+        // A repeated watcher notification for an already attached ID does not
+        // count as another game launch.
+        if (window.api?.getSystemStats) {
+          try {
+            const stats = await window.api.getSystemStats();
+            reportSignal('GAME_LAUNCH', {
+              ramUsage: stats.memUsed,
+              cpuLoad: stats.cpuLoad,
+              gpuLoad: stats.gpuLoad
+            });
+          } catch {
+            reportSignal('GAME_LAUNCH');
+          }
+        } else {
+          reportSignal('GAME_LAUNCH');
+        }
 
         // Force navigation to the active session view so the user sees the timer
         console.log("Navigating to /play...");
@@ -65,17 +65,10 @@ export const useSessionSync = () => {
       console.log("%c[Frontend] 🛑 RECEIVED END SIGNAL", "color: red; font-weight: bold;", data);
       console.log('[Sync] Watcher ended session:', data);
       
-      // ⚡ Report Signal for "Touch Grass" check
-      reportSignal('GAME_CLOSE');
-
-      // Stop the timer locally. 
-      // The backend has already saved the session record.
-      // `stopTimer` clears activeSession and updates `lastUpdate` to trigger refetches.
       const currentSession = useSessionStore.getState().activeSession;
-      
-      // Only stop if the ended game matches the active one (safety check)
-      if (!currentSession || currentSession.gameId === data.gameId) {
-          stopTimer();
+      if (currentSession?.sessionId === data.sessionId) {
+          reportSignal('GAME_CLOSE');
+          void handlePersistedEnd(data.sessionId);
       }
     });
 
@@ -84,5 +77,5 @@ export const useSessionSync = () => {
       removeStartListener();
       removeEndListener();
     };
-  }, [navigate, startTimer, stopTimer, reportSignal]);
+  }, [navigate, startTimer, handlePersistedEnd, recoverActiveSession, reportSignal]);
 };

@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/images/logo.png" alt="Valis Logo" width="120" height="120" />
   <h1>VALIS</h1>
-  <p><strong>v1.3.0 | Digital Game Journal</strong></p>
+  <p><strong>v1.4.0 | Digital Game Journal</strong></p>
   
   <p>
     <a href="#features">Features</a> •
@@ -55,7 +55,7 @@ Valis tracks *how* you play, not just *if* you play.
 * **Steam Sync:** Imports full libraries and achievements, with an optional session-aware automatic sync that only updates Valis and never modifies Steam.
 * **PlayStation Network:** NPSSO token exchange for Trophies and history.
 * **Epic Games Store:** Visual scraper to bypass API limitations.
-* **Battle.net / Blizzard:** Securely links your BattleTag identity through OAuth. Game-library sync is not claimed or enabled.
+* **Battle.net / Blizzard:** Connects through OAuth to import WoW Retail and confirmed achievements across characters in the chosen account region (US, EU, KR, or TW). A new sync requests authorization again. Blizzard does not expose a complete owned-games library through this flow; Classic and other Blizzard games are not imported.
 * **Emulator Watcher:** File monitor for Goldberg/CODEX emulator files to sync "unofficial" achievements.
 
 ### 5. Gamification (Valis Protocol)
@@ -83,6 +83,8 @@ Valis tracks *how* you play, not just *if* you play.
 * **Cloud DB:** Supabase (PostgreSQL) - *Only used if signed in*
 * **Sync:** Custom JSON/Blob sync via RLS Policies
 
+**Local backups:** Valis writes a complete SQLite backup when opened, or at 03:00 local time when already open, if that day's file is missing. It keeps the latest seven completed daily files in the app's `backups` directory. Settings → Data & Maintenance lists them and can restore one after restarting; the previous database is kept until the restored app starts successfully. Backups remain available without cloud sign-in.
+
 ## <a id="getting-started"></a>📦 Getting Started
 
 ### Prerequisites
@@ -103,11 +105,15 @@ Valis tracks *how* you play, not just *if* you play.
     ```
 
 3.  **Setup Environment**
-    Create a `.env` file in the root:
+    Create a `.env.local` file in the root:
     ```env
     VITE_SUPABASE_URL=your_supabase_url
     VITE_SUPABASE_ANON_KEY=your_anon_key
+    VITE_BLIZZARD_CLIENT_ID=your_public_blizzard_client_id
+    VITE_BLIZZARD_REDIRECT_URI=http://127.0.0.1:43821/oauth/blizzard/callback
     ```
+
+    For WoW Retail sync, register the exact loopback redirect URI with Battle.net, deploy the updated `valis-proxy` Supabase Edge Function, and configure its `BLIZZARD_CLIENT_ID`, `BLIZZARD_CLIENT_SECRET`, and `BLIZZARD_REDIRECT_URI` secrets. The redirect secret must match the client URI. Keep the client secret only in Supabase.
 
 4.  **Run Development Mode**
     ```bash

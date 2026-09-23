@@ -8,6 +8,7 @@ import PsnGuideModal from '../components/PsnGuideModal';
 import { useSyncStore } from '../../../store/syncStore';
 import { useMarkObserver } from '../../gamification/hooks/useMarkObserver';
 import { useSocialBroadcast } from '../../social/hooks/useSocialBroadcast';
+import type { BlizzardSyncResult } from '../../../types/electron';
 
 const AvatarCycler = ({ urlStr, alt }: { urlStr: string, alt: string }) => {
     const [index, setIndex] = React.useState(0);
@@ -54,6 +55,9 @@ export const IntegrationsTab = () => {
   // Loading States
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [blizzardAuthPending, setBlizzardAuthPending] = useState(false);
+  const [blizzardRegion, setBlizzardRegion] = useState<'us' | 'eu' | 'kr' | 'tw'>('us');
+  const [blizzardResult, setBlizzardResult] = useState<BlizzardSyncResult | null>(null);
+  const [blizzardSelection, setBlizzardSelection] = useState<string>('__new__');
 
   // Modal State
   const [syncConfirmPlatform, setSyncConfirmPlatform] = useState<'steam' | 'epic' | 'psn' | 'xbox' | null>(null);
@@ -196,9 +200,15 @@ export const IntegrationsTab = () => {
     setBlizzardAuthPending(true);
     try {
       if (!window.api) return;
-      const res = await window.api.authBlizzard();
-      if (res.success) {
-        toast.success(`Battle.net account connected${res.account?.username ? ` as ${res.account.username}` : ''}.`);
+      const res = await window.api.authBlizzard({ region: blizzardRegion });
+      setBlizzardResult(res);
+      if (res.status === 'needs-selection') {
+        setBlizzardSelection(res.candidates?.[0]?.id || '__new__');
+        toast.info('Choose which World of Warcraft entry to update.');
+      } else if (res.success) {
+        if (res.status === 'partial') toast.info('WoW Retail imported with some characters unavailable. Earlier achievements were preserved.');
+        else if (res.status === 'empty') toast.info('Battle.net connected. No WoW Retail characters were found in this region.');
+        else toast.success(`WoW Retail synced${res.account?.username ? ` for ${res.account.username}` : ''}.`);
         const accounts = await window.api.getLinkedAccounts('blizzard');
         setBlizzardAccounts(accounts || []);
       } else if (res.status === 'cancelled') {
@@ -210,6 +220,28 @@ export const IntegrationsTab = () => {
       toast.error('Battle.net connection failed.');
     } finally {
       setBlizzardAuthPending(false);
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleBlizzardGameSelection = async () => {
+    if (!window.api || !blizzardResult?.pendingId) return;
+    setIsAuthLoading(true);
+    try {
+      const res = await window.api.selectBlizzardWowGame({
+        pendingId: blizzardResult.pendingId,
+        gameId: blizzardSelection === '__new__' ? null : blizzardSelection
+      });
+      setBlizzardResult(res);
+      if (res.success) {
+        toast.success('WoW Retail synced.');
+        setBlizzardAccounts(await window.api.getLinkedAccounts('blizzard'));
+      } else {
+        toast.error(res.message || 'WoW Retail import failed.');
+      }
+    } catch {
+      toast.error('WoW Retail import failed.');
+    } finally {
       setIsAuthLoading(false);
     }
   };
@@ -613,7 +645,7 @@ export const IntegrationsTab = () => {
             </h2>
             <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                    Link your official Battle.net identity. Valis does not import a Blizzard library or achievements in this release.
+                    Connect Battle.net to import WoW Retail and achievements from every character in the selected region. Syncing again opens Battle.net authorization.
                 </p>
                 {blizzardAccounts.length > 0 ? (
                     <AccountList accounts={blizzardAccounts} platform="blizzard" />
@@ -622,7 +654,20 @@ export const IntegrationsTab = () => {
                         No Battle.net accounts linked.
                     </div>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                    <label htmlFor="blizzard-region" className="text-sm text-muted-foreground">Region</label>
+                    <select
+                        id="blizzard-region"
+                        value={blizzardRegion}
+                        onChange={(event) => setBlizzardRegion(event.target.value as 'us' | 'eu' | 'kr' | 'tw')}
+                        disabled={isAuthLoading}
+                        className="rounded-md border bg-background px-3 py-2 text-sm"
+                    >
+                        <option value="us">Americas (US)</option>
+                        <option value="eu">Europe (EU)</option>
+                        <option value="kr">Korea (KR)</option>
+                        <option value="tw">Taiwan (TW)</option>
+                    </select>
                     <button
                         type="button"
                         onClick={blizzardAuthPending ? handleBlizzardCancel : handleBlizzardAuth}
@@ -632,14 +677,34 @@ export const IntegrationsTab = () => {
                           : "px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 disabled:opacity-50"}
                     >
                         {blizzardAuthPending ? <LogOut size={16} /> : <LinkIcon size={16} />}
-                        {blizzardAuthPending ? 'Cancel connection' : 'Connect Battle.net'}
+                        {blizzardAuthPending ? 'Cancel connection' : blizzardAccounts.length ? 'Sync WoW Retail' : 'Connect Battle.net'}
                     </button>
                     {blizzardAuthPending && (
                         <span className="text-xs text-muted-foreground">Waiting for the secure browser callback…</span>
                     )}
                 </div>
+                {blizzardResult?.status === 'needs-selection' && blizzardResult.pendingId && (
+                    <div className="flex flex-wrap items-center gap-2 rounded-md border p-3 text-sm">
+                        <span>Use WoW entry:</span>
+                        <select
+                            value={blizzardSelection}
+                            onChange={(event) => setBlizzardSelection(event.target.value)}
+                            className="rounded-md border bg-background px-3 py-2"
+                        >
+                            {blizzardResult.candidates?.map((game) => <option key={game.id} value={game.id}>{game.name}</option>)}
+                            <option value="__new__">Create a new WoW Retail entry</option>
+                        </select>
+                        <button type="button" onClick={handleBlizzardGameSelection} disabled={isAuthLoading} className="rounded-md bg-primary px-3 py-2 text-primary-foreground disabled:opacity-50">Import</button>
+                    </div>
+                )}
+                {blizzardResult?.success && blizzardResult.status !== 'needs-selection' && (
+                    <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
+                        {blizzardResult.characters ?? 0} characters · {blizzardResult.achievements ?? 0} confirmed achievements
+                        {blizzardResult.status === 'partial' && ` · ${blizzardResult.failures ?? 0} characters unavailable`}
+                    </div>
+                )}
                 <div className="p-3 bg-muted/30 border rounded-md text-xs text-muted-foreground">
-                    OAuth tokens and the Blizzard client secret stay in the configured backend. Valis stores only your account ID and BattleTag.
+                    OAuth tokens and the Blizzard client secret stay in the configured backend. Valis stores your account identity, WoW association and confirmed achievements.
                 </div>
             </div>
         </div>

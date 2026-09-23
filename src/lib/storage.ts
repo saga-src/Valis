@@ -28,10 +28,12 @@ export interface StorageApi {
   openFileDialog: () => Promise<string | null>;
   updateWatcherSettings: (settings: { enabled: boolean; interval: number }) => Promise<boolean>;
   getWatcherHealth: () => Promise<any>;
-  onSessionStarted: (callback: (data: { gameId: string; startTime: number; sessionId?: string }) => void) => () => void;
-  onSessionEnded: (callback: (data: { gameId: string; duration: number }) => void) => () => void;
-  startSession: (gameId: string, startTime: number) => Promise<{ success: boolean; sessionId?: string; error?: string }>;
-  endSession: (sessionId: string, data: any) => Promise<{ success: boolean; session?: any; error?: string }>;
+  onSessionStarted: (callback: (data: { gameId: string; startTime: number; sessionId: string; finalizedSessionIds?: string[] }) => void) => () => void;
+  onSessionEnded: (callback: (data: { gameId: string; sessionId: string; duration: number }) => void) => () => void;
+  startSession: (gameId: string, startTime: number, options?: { previousSessionId?: string; previousData?: any }) => Promise<{ success: boolean; sessionId?: string; startTime?: number; reused?: boolean; error?: string }>;
+  endSession: (sessionId: string, data: any) => Promise<{ success: boolean; status?: 'finished' | 'already-finished'; session?: any; error?: string }>;
+  getActiveSession: () => Promise<{ id: string; game_id: string; start_time: number } | null>;
+  saveSessionDraft: (sessionId: string, data: any) => Promise<{ success: boolean; session?: any; error?: string }>;
   
   addManualSession: (data: any) => Promise<{ success: boolean; sessionId?: string }>;
   updateSession: (sessionId: string, updates: any) => Promise<{ success: boolean }>;
@@ -168,19 +170,19 @@ export const updateWatcherSettings = async (settings: { enabled: boolean; interv
   return await window.api.updateWatcherSettings(settings);
 };
 
-export const onSessionStarted = (callback: (data: { gameId: string; startTime: number; sessionId?: string }) => void) => {
+export const onSessionStarted = (callback: (data: { gameId: string; startTime: number; sessionId: string; finalizedSessionIds?: string[] }) => void) => {
   if (!window.api) return () => {};
   return window.api.onSessionStarted(callback);
 };
 
-export const onSessionEnded = (callback: (data: { gameId: string; duration: number }) => void) => {
+export const onSessionEnded = (callback: (data: { gameId: string; sessionId: string; duration: number }) => void) => {
   if (!window.api) return () => {};
   return window.api.onSessionEnded(callback);
 };
 
-export const startSession = async (gameId: string, startTime: number) => {
+export const startSession = async (gameId: string, startTime: number, options?: { previousSessionId?: string; previousData?: any }) => {
   if (!window.api) return { success: false, error: 'API not available' };
-  return await window.api.startSession(gameId, startTime);
+  return await window.api.startSession(gameId, startTime, options);
 };
 
 export const endSession = async (sessionId: string, data: any) => {
